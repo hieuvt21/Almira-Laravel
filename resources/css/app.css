@@ -1,0 +1,4 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+body.font-sans { font-family: 'Be Vietnam Pro', ui-sans-serif, system-ui, sans-serif; }
