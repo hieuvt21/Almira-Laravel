@@ -17,7 +17,7 @@ if (file_exists($envPath)) {
 
 // Lấy token từ header của lệnh curl (X-Deploy-Token sẽ được PHP chuyển thành HTTP_X_DEPLOY_TOKEN)
 $headerToken = $_SERVER['HTTP_X_DEPLOY_TOKEN'] ?? '';
-if (!$deployToken || $headerToken !== $deployToken) {
+if (!$deployToken || !hash_equals($deployToken, $headerToken)) {
     http_response_code(401);
     die(json_encode(['error' => 'Unauthorized. Sai hoặc thiếu DEPLOY_TOKEN trong .env.']));
 }
@@ -49,12 +49,17 @@ try {
     $kernel->call('config:clear');
     $kernel->call('route:clear');
     $kernel->call('view:clear');
+    $kernel->call('cache:clear');
     $kernel->call('migrate', ['--force' => true]);
-    
-    // Nạp lại bộ nhớ đệm của Spatie Permission
-    app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
-} catch (\Exception $e) {
+    // Tạo quyền, vai trò và tài khoản admin đầu tiên.
+    // An toàn khi chạy lại: chỉ thêm cái còn thiếu, không ghi đè dữ liệu đã có.
+    $kernel->call('db:seed', ['--class' => 'RolePermissionSeeder', '--force' => true]);
+
+    // Nạp lại bộ nhớ đệm của Spatie Permission
+    $app[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+
+} catch (\Throwable $e) {
     http_response_code(500);
     unlink(__FILE__); // Vẫn cố xóa file bảo mật này nếu có lỗi
     die(json_encode(['error' => 'Lỗi khi chạy lệnh Artisan: ' . $e->getMessage()]));
