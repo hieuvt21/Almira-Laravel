@@ -20,6 +20,7 @@ export const navigation = [
         label: 'Hàng hóa',
         items: [
             { label: 'Sản phẩm', icon: 'pi pi-box', route: 'products.index', match: 'products.*', can: 'products.view' },
+            { label: 'Danh mục & đơn vị', icon: 'pi pi-tags', route: 'catalog.index', match: 'catalog.*', can: 'products.view' },
             { label: 'Tồn kho', icon: 'pi pi-database', route: 'inventory.index', match: 'inventory.*', can: 'inventory.view' },
             { label: 'Nhập hàng', icon: 'pi pi-truck', route: 'purchases.index', match: 'purchases.*', can: 'purchases.view' },
         ],
