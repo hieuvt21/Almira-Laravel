@@ -1,11 +1,9 @@
-# Đặt file này tại: .github/workflows/deploy.yml
-# Mỗi lần push lên nhánh main: build trên GitHub rồi tự upload lên host cPanel.
 name: Deploy to cPanel
 
 on:
   push:
     branches: [main]
-  workflow_dispatch: # cho phép bấm chạy tay trong tab Actions
+  workflow_dispatch: # Cho phép bấm chạy thủ công trên giao diện GitHub
 
 concurrency:
   group: deploy
@@ -25,7 +23,7 @@ jobs:
           extensions: mbstring, xml, curl, zip, bcmath, intl, pdo_mysql
           tools: composer:v2
 
-      - name: Cài thư viện PHP (bản chạy thật, không có dev)
+      - name: Cài thư viện PHP (bản Production, không có module dev)
         run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
 
       - name: Cài Node
@@ -34,38 +32,26 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Build giao diện Vue
+      - name: Build giao diện Vue/Vite
         run: |
           npm ci
           npm run build
 
-      - name: Upload lên host qua FTPS
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps
-          # Thư mục gốc dự án trên host, tính từ thư mục mà tài khoản FTP đăng nhập vào
-          server-dir: /
-          exclude: |
-            **/.git/**
-            **/.github/**
-            **/node_modules/**
-            tests/**
-            .env
-            .env.*
-            public/hot
+      - name: Nén mã nguồn thành 1 file deploy.zip
+        # Nén toàn bộ thư mục, loại trừ các file rác, file môi trường và các thư mục không cần thiết trên server
+        run: zip -rq deploy.zip . -x "**/.git/**" "**/.github/**" "**/node_modules/**" "tests/**" ".env*" "public/hot"
 
-      # Tự chạy migrate trên host sau khi upload xong.
-      # Cần: secret DEPLOY_TOKEN + APP_URL trên GitHub, và DEPLOY_TOKEN (cùng giá trị) trong .env trên host.
-      # Chưa khai báo DEPLOY_TOKEN thì bước này tự bỏ qua.
-      - name: Chạy migrate trên host
+      - name: Upload file Zip lên host cPanel qua FTPS
+        # Bắn trực tiếp 1 file zip lên server giúp giải quyết triệt để lỗi timeout
+        run: curl -T deploy.zip --ftp-ssl --insecure -u "${{ secrets.FTP_USERNAME }}:${{ secrets.FTP_PASSWORD }}" ftp://${{ secrets.FTP_SERVER }}/
+
+      - name: Gọi API kích hoạt giải nén và Migrate trên host
         env:
           DT: ${{ secrets.DEPLOY_TOKEN }}
           APP_URL: ${{ secrets.APP_URL }}
         if: ${{ env.DT != '' && env.APP_URL != '' }}
         run: |
           sleep 5
+          # Gọi webhook để yêu cầu host tự giải nén và chạy cấu hình
           curl -fsS --retry 3 --retry-delay 5 -X POST "${APP_URL%/}/api/he-thong/cap-nhat" \
             -H "X-Deploy-Token: $DT" -H "Accept: application/json"
