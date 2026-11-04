@@ -3,7 +3,7 @@ name: Deploy to cPanel
 on:
   push:
     branches: [main]
-  workflow_dispatch: # Cho phép bấm chạy thủ công trên giao diện GitHub
+  workflow_dispatch:
 
 concurrency:
   group: deploy
@@ -23,7 +23,7 @@ jobs:
           extensions: mbstring, xml, curl, zip, bcmath, intl, pdo_mysql
           tools: composer:v2
 
-      - name: Cài thư viện PHP (bản Production, không có module dev)
+      - name: Cài thư viện PHP (Bản Production)
         run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
 
       - name: Cài Node
@@ -37,21 +37,24 @@ jobs:
           npm ci
           npm run build
 
-      - name: Nén mã nguồn thành 1 file deploy.zip
-        # Nén toàn bộ thư mục, loại trừ các file rác, file môi trường và các thư mục không cần thiết trên server
-        run: zip -rq deploy.zip . -x "**/.git/**" "**/.github/**" "**/node_modules/**" "tests/**" ".env*" "public/hot"
+      - name: Nén mã nguồn thành deploy.zip
+        # Đã loại trừ file deploy-helper.php khỏi file zip để xử lý tải lên riêng
+        run: zip -rq deploy.zip . -x "**/.git/**" "**/.github/**" "**/node_modules/**" "tests/**" ".env*" "public/hot" "deploy-helper.php"
 
-      - name: Upload file Zip lên host cPanel qua FTPS
-        # Bắn trực tiếp 1 file zip lên server giúp giải quyết triệt để lỗi timeout
+      - name: Upload File ZIP lên thư mục gốc
         run: curl -T deploy.zip --ftp-ssl --insecure -u "${{ secrets.FTP_USERNAME }}:${{ secrets.FTP_PASSWORD }}" ftp://${{ secrets.FTP_SERVER }}/
 
-      - name: Gọi API kích hoạt giải nén và Migrate trên host
+      - name: Upload File Helper thẳng vào thư mục Public
+        # Đẩy file này vào public/ để nó có thể được gọi thông qua domain
+        run: curl -T deploy-helper.php --ftp-ssl --insecure -u "${{ secrets.FTP_USERNAME }}:${{ secrets.FTP_PASSWORD }}" ftp://${{ secrets.FTP_SERVER }}/public/deploy-helper.php
+
+      - name: Gọi File Helper kích hoạt quá trình
         env:
           DT: ${{ secrets.DEPLOY_TOKEN }}
           APP_URL: ${{ secrets.APP_URL }}
         if: ${{ env.DT != '' && env.APP_URL != '' }}
         run: |
-          sleep 5
-          # Gọi webhook để yêu cầu host tự giải nén và chạy cấu hình
-          curl -fsS --retry 3 --retry-delay 5 -X POST "${APP_URL%/}/api/he-thong/cap-nhat" \
+          sleep 3
+          # Gọi trực tiếp vào URL chứa file helper
+          curl -fsS --retry 3 --retry-delay 5 -X POST "${APP_URL%/}/deploy-helper.php" \
             -H "X-Deploy-Token: $DT" -H "Accept: application/json"
