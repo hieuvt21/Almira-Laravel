@@ -11,16 +11,26 @@ use App\Models\Setting;
  */
 class CustomerTiers
 {
+    /** Biểu tượng cho phép: lấy từ PrimeIcons (thư viện đã cài sẵn trong dự án). */
+    public const ICONS = [
+        'pi-star-fill', 'pi-star', 'pi-user', 'pi-heart-fill', 'pi-bookmark-fill', 'pi-gift',
+        'pi-bolt', 'pi-verified', 'pi-trophy', 'pi-shield', 'pi-flag-fill', 'pi-thumbs-up-fill',
+        'pi-sun', 'pi-tag', 'pi-circle-fill',
+    ];
+
+    /** Màu mặc định theo thứ tự hạng: thấp -> cao (khớp với TierBadge cũ). */
+    public const COLORS = ['#64748b', '#0284c7', '#0d9488', '#a16207', '#ea580c', '#7c3aed', '#db2777', '#334155'];
+
     public static function defaults(): array
     {
         return [
             'enabled' => true,
             'tiers' => [
-                ['name' => 'Thành viên', 'min_spent' => 0, 'discount' => 0],
-                ['name' => 'Thân thiết', 'min_spent' => 2000000, 'discount' => 1],
-                ['name' => 'Bạc', 'min_spent' => 5000000, 'discount' => 2],
-                ['name' => 'Vàng', 'min_spent' => 10000000, 'discount' => 3],
-                ['name' => 'VIP', 'min_spent' => 30000000, 'discount' => 5],
+                ['name' => 'Thành viên', 'min_spent' => 0, 'discount' => 0, 'color' => self::COLORS[0], 'icon' => 'pi-user'],
+                ['name' => 'Thân thiết', 'min_spent' => 2000000, 'discount' => 1, 'color' => self::COLORS[1], 'icon' => 'pi-heart-fill'],
+                ['name' => 'Bạc', 'min_spent' => 5000000, 'discount' => 2, 'color' => self::COLORS[2], 'icon' => 'pi-star-fill'],
+                ['name' => 'Vàng', 'min_spent' => 10000000, 'discount' => 3, 'color' => self::COLORS[3], 'icon' => 'pi-trophy'],
+                ['name' => 'VIP', 'min_spent' => 30000000, 'discount' => 5, 'color' => self::COLORS[4], 'icon' => 'pi-verified'],
             ],
         ];
     }
@@ -36,7 +46,9 @@ class CustomerTiers
             ->map(fn ($t) => [
                 'name' => trim((string) ($t['name'] ?? '')),
                 'min_spent' => (float) ($t['min_spent'] ?? 0),
-                'discount' => (float) ($t['discount'] ?? 0),
+                'discount' => min(100.0, max(0.0, (float) ($t['discount'] ?? 0))),
+                'color' => (string) ($t['color'] ?? ''),
+                'icon' => (string) ($t['icon'] ?? ''),
             ])
             ->filter(fn ($t) => $t['name'] !== '')
             ->sortBy('min_spent')
@@ -51,6 +63,13 @@ class CustomerTiers
 
         foreach ($tiers as $i => &$tier) {
             $tier['level'] = $i;
+            // Dữ liệu cũ chưa có màu/biểu tượng: dùng mặc định theo thứ tự hạng
+            if (! preg_match('/^#[0-9a-fA-F]{6}$/', $tier['color'])) {
+                $tier['color'] = self::COLORS[$i % count(self::COLORS)];
+            }
+            if (! in_array($tier['icon'], self::ICONS, true)) {
+                $tier['icon'] = 'pi-star-fill';
+            }
         }
         unset($tier);
 
@@ -87,6 +106,8 @@ class CustomerTiers
             'name' => $current['name'],
             'min_spent' => $current['min_spent'],
             'discount' => $current['discount'],
+            'color' => $current['color'],
+            'icon' => $current['icon'],
             'next' => $next ? [
                 'name' => $next['name'],
                 'min_spent' => $next['min_spent'],

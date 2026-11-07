@@ -90,12 +90,14 @@ const progress = computed(() => {
     <Drawer v-model:visible="visible" position="right" header="Thông tin khách hàng" :style="{ width: 'min(27rem, 100vw)' }">
         <div v-if="customer" class="cd">
             <div class="cd-head">
-                <UserAvatar :name="customer.name" :url="customer.avatar_url" size="xlarge" />
+                <div class="cd-who">
+                    <UserAvatar :name="customer.name" :url="customer.avatar_url" size="xlarge" />
+                    <TierBadge :tier="customer.tier" show-discount />
+                </div>
                 <div class="cd-id">
                     <h3>{{ customer.name }}</h3>
                     <span class="cd-code">{{ customer.code }}</span>
                     <div class="cd-tags">
-                        <TierBadge :tier="customer.tier" show-discount />
                         <span v-if="birthdayText" class="cu-bday"><i class="pi pi-gift" aria-hidden="true" />{{ birthdayText }}</span>
                     </div>
                 </div>
@@ -181,6 +183,8 @@ const progress = computed(() => {
 .cd-head { display: flex; align-items: center; gap: 1rem; }
 .cd-head .p-avatar { flex: none; width: 5rem !important; height: 5rem !important; }
 .cd-head .al-avatar { font-size: 1.8rem !important; background: linear-gradient(135deg, var(--p-primary-400), var(--p-primary-700)) !important; color: #fff !important; }
+.cd-who { flex: none; display: flex; flex-direction: column; align-items: center; gap: 0.45rem; max-width: 8rem; }
+.cd-who .tier-badge { max-width: 100%; white-space: normal; text-align: center; }
 .cd-id { min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .cd-id h3 { margin: 0; font-size: 1.2rem; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
 .cd-code { color: var(--al-muted); font-size: 0.82rem; }

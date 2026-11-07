@@ -1,9 +1,11 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import Button from 'primevue/button';
 import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
+import ColorPicker from 'primevue/colorpicker';
+import Popover from 'primevue/popover';
 import ToggleSwitch from 'primevue/toggleswitch';
 import TierBadge from '@/Components/TierBadge.vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -11,14 +13,18 @@ import { useMoney } from '@/composables/useMoney';
 
 const props = defineProps({
     config: { type: Object, required: true },
+    icons: { type: Array, default: () => [] },
 });
+
+// Màu mặc định cho hạng mới thêm, lần lượt theo thứ tự
+const COLORS = ['#64748b', '#0284c7', '#0d9488', '#a16207', '#ea580c', '#7c3aed', '#db2777', '#334155'];
 
 const { money } = useMoney();
 const MAX_TIERS = 8;
 
 const form = useForm({
     enabled: props.config.enabled,
-    tiers: props.config.tiers.map(({ name, min_spent, discount }) => ({ name, min_spent, discount })),
+    tiers: props.config.tiers.map(({ name, min_spent, discount, color, icon }) => ({ name, min_spent, discount, color, icon })),
 });
 
 function addTier() {
@@ -26,7 +32,13 @@ function addTier() {
     const last = form.tiers[form.tiers.length - 1];
     form.tiers = [
         ...form.tiers,
-        { name: `Hạng ${form.tiers.length + 1}`, min_spent: (last?.min_spent ?? 0) + 5000000, discount: last?.discount ?? 0 },
+        {
+            name: `Hạng ${form.tiers.length + 1}`,
+            min_spent: (last?.min_spent ?? 0) + 5000000,
+            discount: last?.discount ?? 0,
+            color: COLORS[form.tiers.length % COLORS.length],
+            icon: 'pi-star-fill',
+        },
     ];
 }
 
@@ -53,6 +65,20 @@ const rowErrors = computed(() => {
         return problems;
     });
 });
+
+// ColorPicker của PrimeVue trả về mã hex không có dấu #
+const hexOf = (c) => `#${String(c ?? '').replace('#', '')}`;
+const setColor = (t, v) => (t.color = hexOf(v));
+const pickerFor = ref(null);
+const iconPop = ref();
+function openIcons(e, i) {
+    pickerFor.value = i;
+    iconPop.value.toggle(e);
+}
+function chooseIcon(key) {
+    if (pickerFor.value !== null) form.tiers[pickerFor.value].icon = key;
+    iconPop.value.hide();
+}
 
 const serverError = (i, field) => form.errors[`tiers.${i}.${field}`];
 const rowError = (i, field) => serverError(i, field) || rowErrors.value[i]?.[field] || '';
@@ -96,12 +122,13 @@ function save() {
                         <span>Tên hạng</span>
                         <span>Từ mức chi tiêu</span>
                         <span>Giảm giá</span>
+                        <span>Màu &amp; biểu tượng</span>
                         <span />
                     </div>
 
                     <div v-for="(t, i) in form.tiers" :key="i" class="tr-row">
                         <div class="tr-cell tr-badge">
-                            <TierBadge :tier="{ level: i, name: t.name || '...' }" />
+                            <TierBadge :tier="{ level: i, name: t.name || '...', color: t.color, icon: t.icon }" />
                             <small class="field-hint">{{ rangeText(i) }}</small>
                         </div>
 
@@ -145,6 +172,32 @@ function save() {
                             </small>
                         </div>
 
+                        <div class="tr-cell">
+                            <span class="tr-label">Màu &amp; biểu tượng</span>
+                            <div class="tr-style">
+                                <ColorPicker
+                                    :modelValue="String(t.color).replace('#', '')"
+                                    format="hex"
+                                    :inputId="`tr-color-${i}`"
+                                    :aria-label="`Màu hạng ${t.name}`"
+                                    @update:modelValue="(v) => setColor(t, v)"
+                                />
+                                <Button
+                                    type="button"
+                                    class="tr-iconbtn"
+                                    outlined
+                                    severity="secondary"
+                                    :aria-label="`Chọn biểu tượng hạng ${t.name}`"
+                                    @click="(e) => openIcons(e, i)"
+                                >
+                                    <i :class="['pi', t.icon]" :style="{ color: t.color }" aria-hidden="true" />
+                                </Button>
+                            </div>
+                            <small v-if="serverError(i, 'color') || serverError(i, 'icon')" class="field-error">
+                                {{ serverError(i, 'color') || serverError(i, 'icon') }}
+                            </small>
+                        </div>
+
                         <div class="tr-cell tr-del">
                             <Button
                                 v-if="i > 0"
@@ -160,6 +213,22 @@ function save() {
                         </div>
                     </div>
 
+                    <Popover ref="iconPop">
+                        <div class="tr-icons" role="group" aria-label="Biểu tượng hạng">
+                            <button
+                                v-for="key in icons"
+                                :key="key"
+                                type="button"
+                                class="tr-icon"
+                                :class="{ 'is-on': pickerFor !== null && form.tiers[pickerFor]?.icon === key }"
+                                :aria-label="key.replace('pi-', '')"
+                                @click="chooseIcon(key)"
+                            >
+                                <i :class="['pi', key]" aria-hidden="true" />
+                            </button>
+                        </div>
+                    </Popover>
+
                     <small v-if="form.errors.tiers" class="field-error" role="alert">{{ form.errors.tiers }}</small>
 
                     <div style="margin-top: 0.75rem">
@@ -173,7 +242,7 @@ function save() {
                             :disabled="form.tiers.length >= MAX_TIERS"
                             @click="addTier"
                         />
-                        <small class="field-hint" style="margin-left: 0.6rem">Tối đa {{ MAX_TIERS }} hạng, mức chi tiêu tăng dần từ trên xuống.</small>
+                        <small class="field-hint" style="margin-left: 0.6rem">Tối đa {{ MAX_TIERS }} hạng, mức chi tiêu tăng dần từ trên xuống. Giảm giá tối đa 100%.</small>
                     </div>
                 </fieldset>
 
@@ -188,12 +257,19 @@ function save() {
 
 <style>
 .tr-form { max-width: 62rem; }
-.tr-head, .tr-row { display: grid; grid-template-columns: 11rem 1.3fr 1.3fr 0.8fr 3rem; gap: 0.75rem; align-items: start; }
+.tr-head, .tr-row { display: grid; grid-template-columns: 11rem 1.3fr 1.3fr 0.8fr 9rem 3rem; gap: 0.75rem; align-items: start; }
 .tr-head { padding: 0 0 0.4rem; color: var(--al-muted); font-size: 0.8rem; font-weight: 600; }
 .tr-row { padding: 0.7rem 0; border-top: 1px solid var(--al-line); }
 .tr-cell { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
 .tr-badge { align-items: flex-start; padding-top: 0.45rem; }
 .tr-del { align-items: flex-end; }
+.tr-style { display: flex; align-items: center; gap: 0.6rem; padding-top: 0.2rem; }
+.tr-iconbtn { width: 2.4rem; height: 2.4rem; padding: 0 !important; }
+.tr-icons { display: grid; grid-template-columns: repeat(5, 2.6rem); gap: 0.35rem; }
+.tr-icon { display: grid; place-items: center; height: 2.6rem; border: 2px solid transparent; border-radius: 0.7rem; background: rgba(255, 255, 255, 0.6); color: var(--al-text); cursor: pointer; }
+.tr-icon:hover { background: #fff; }
+.tr-icon.is-on { border-color: var(--al-primary); color: var(--al-primary); }
+.tr-icon:focus-visible { outline: 2px solid var(--al-primary); outline-offset: 2px; }
 .tr-label { display: none; font-size: 0.85rem; font-weight: 500; }
 @media (max-width: 767px) {
     .tr-head { display: none; }

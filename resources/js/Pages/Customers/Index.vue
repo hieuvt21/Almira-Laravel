@@ -81,9 +81,12 @@ const sortOptions = [
     { value: 'newest', label: 'Mới nhất' },
     { value: 'oldest', label: 'Cũ nhất' },
     { value: 'name', label: 'Theo tên (A → Z)' },
-    { value: 'birth', label: 'Theo ngày sinh' },
+    { value: 'name_desc', label: 'Theo tên (Z → A)' },
+    { value: 'age_asc', label: 'Theo tuổi (nhỏ → lớn)' },
+    { value: 'age_desc', label: 'Theo tuổi (lớn → nhỏ)' },
     { value: 'birthday', label: 'Sinh nhật sắp tới' },
-    { value: 'spent', label: 'Theo chi tiêu (cao → thấp)' },
+    { value: 'spent', label: 'Chi tiêu (cao → thấp)' },
+    { value: 'spent_asc', label: 'Chi tiêu (thấp → cao)' },
 ];
 
 const search = ref(props.filters.search ?? '');
@@ -405,13 +408,13 @@ function openDetail(c) {
                 <Column field="name" header="Họ tên">
                     <template #body="{ data }">
                         <div class="user-cell">
-                            <UserAvatar :name="data.name" :url="data.avatar_url" />
+                            <div class="cu-who cu-who--row">
+                                <UserAvatar :name="data.name" :url="data.avatar_url" />
+                                <TierBadge v-if="tiersEnabled" :tier="data.tier" />
+                            </div>
                             <button type="button" class="cu-link" @click="openDetail(data)">{{ data.name }}</button>
                         </div>
                     </template>
-                </Column>
-                <Column v-if="tiersEnabled" header="Hạng">
-                    <template #body="{ data }"><TierBadge :tier="data.tier" /></template>
                 </Column>
                 <Column field="phone" header="Số điện thoại">
                     <template #body="{ data }">{{ data.phone ? formatPhone(data.phone) : '—' }}</template>
@@ -464,7 +467,6 @@ function openDetail(c) {
                         <header class="cu-top">
                             <div class="cu-tags">
                                 <span class="cu-code">{{ c.code }}</span>
-                                <TierBadge v-if="tiersEnabled" :tier="c.tier" />
                             </div>
                             <div class="cu-actions">
                                 <Button
@@ -491,7 +493,10 @@ function openDetail(c) {
                         </header>
 
                         <div class="cu-main">
-                            <UserAvatar :name="c.name" :url="c.avatar_url" size="xlarge" />
+                            <div class="cu-who">
+                                <UserAvatar :name="c.name" :url="c.avatar_url" size="xlarge" />
+                                <TierBadge v-if="tiersEnabled" :tier="c.tier" />
+                            </div>
                             <div class="cu-lines">
                                 <h3 class="cu-name">
                                     <button type="button" class="cu-link" @click.stop="openDetail(c)">{{ c.name }}</button>
@@ -704,6 +709,9 @@ function openDetail(c) {
     font-size: 1.5rem !important;
     background: linear-gradient(135deg, var(--p-primary-400), var(--p-primary-700)) !important; color: #fff !important;
 }
+.cu-who { flex: none; display: flex; flex-direction: column; align-items: center; gap: 0.45rem; max-width: 6.5rem; }
+.cu-who .tier-badge { max-width: 100%; }
+.cu-who--row { max-width: 7rem; padding: 0.15rem 0; }
 .cu-lines { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .cu-name { margin: 0 0 0.1rem; font-size: 1.05rem; font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; overflow-wrap: anywhere; }
 .cu-line { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0; font-size: 0.88rem; line-height: 1.35; overflow-wrap: anywhere; }

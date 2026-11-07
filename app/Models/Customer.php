@@ -118,8 +118,11 @@ class Customer extends Model
         return match ($sort) {
             'oldest' => $query->orderBy('id'),
             'name' => $query->orderBy('sort_name')->orderBy('name')->orderBy('id'),
-            // Người chưa có ngày sinh xếp cuối; sinh sớm trước
-            'birth' => $query->orderByRaw('birth_year is null')->orderBy('birth_year')->orderBy('birth_date')->orderByDesc('id'),
+            'name_desc' => $query->orderByDesc('sort_name')->orderByDesc('name')->orderByDesc('id'),
+            // Tuổi nhỏ -> lớn = sinh muộn trước. Người chưa có ngày sinh luôn xếp cuối
+            'age_asc' => $query->orderByRaw('birth_year is null')->orderByDesc('birth_year')->orderByDesc('birth_date')->orderByDesc('id'),
+            // Tuổi lớn -> nhỏ = sinh sớm trước
+            'age_desc' => $query->orderByRaw('birth_year is null')->orderBy('birth_year')->orderBy('birth_date')->orderByDesc('id'),
             // Người có sinh nhật gần nhất tính từ hôm nay (chỉ khi biết đủ ngày tháng), người khác xếp cuối
             'birthday' => $query
                 ->orderByRaw('birth_date is null')
@@ -127,6 +130,7 @@ class Customer extends Model
                 ->orderByRaw('month(birth_date) * 100 + day(birth_date)')
                 ->orderByDesc('id'),
             'spent' => $query->orderByDesc('total_spent')->orderByDesc('id'),
+            'spent_asc' => $query->orderBy('total_spent')->orderByDesc('id'),
             default => $query->orderByDesc('id'),
         };
     }

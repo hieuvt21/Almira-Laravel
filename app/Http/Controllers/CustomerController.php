@@ -18,7 +18,7 @@ use Inertia\Response;
 
 class CustomerController extends Controller
 {
-    public const SORTS = ['newest', 'oldest', 'name', 'birth', 'birthday', 'spent'];
+    public const SORTS = ['newest', 'oldest', 'name', 'name_desc', 'age_asc', 'age_desc', 'birthday', 'spent', 'spent_asc'];
 
     public function index(Request $request): Response
     {
