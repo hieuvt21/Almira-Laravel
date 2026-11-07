@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\AppearanceController;
+use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\CustomerExchangeController;
+use App\Http\Controllers\CustomerTierController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\StoreSettingsController;
@@ -39,6 +42,12 @@ Route::middleware('auth')->group(function () {
         Route::put('/numbering', [StoreSettingsController::class, 'updateNumbering'])->name('numbering');
     });
 
+    // Hạng khách hàng: mức chi tiêu và % giảm giá
+    Route::middleware('can:settings.manage')->prefix('customer-tiers')->name('customer-tiers.')->group(function () {
+        Route::get('/', [CustomerTierController::class, 'edit'])->name('edit');
+        Route::put('/', [CustomerTierController::class, 'update'])->name('update');
+    });
+
     // Người dùng
     Route::get('/users/check', [UserController::class, 'check'])->middleware('throttle:90,1')->name('users.check');
     Route::get('/users', [UserController::class, 'index'])->middleware('can:users.view')->name('users.index');
@@ -53,6 +62,21 @@ Route::middleware('auth')->group(function () {
         Route::put('/{role}', [RoleController::class, 'update'])->name('update');
         Route::delete('/{role}', [RoleController::class, 'destroy'])->name('destroy');
     });
+
+    // Khách hàng (các route cố định phải đứng trước route có {customer})
+    Route::get('/customers/check', [CustomerController::class, 'check'])
+        ->middleware(['can:customers.view', 'throttle:90,1'])->name('customers.check');
+    Route::get('/customers/export', [CustomerExchangeController::class, 'export'])
+        ->middleware('can:customers.update')->name('customers.export');
+    Route::get('/customers/template', [CustomerExchangeController::class, 'template'])
+        ->middleware('can:customers.create')->name('customers.template');
+    Route::post('/customers/import', [CustomerExchangeController::class, 'import'])
+        ->middleware(['can:customers.create', 'throttle:10,1'])->name('customers.import');
+    Route::get('/customers', [CustomerController::class, 'index'])->middleware('can:customers.view')->name('customers.index');
+    Route::get('/customers/{customer}', [CustomerController::class, 'show'])->middleware('can:customers.view')->name('customers.show');
+    Route::post('/customers', [CustomerController::class, 'store'])->middleware('can:customers.create')->name('customers.store');
+    Route::put('/customers/{customer}', [CustomerController::class, 'update'])->middleware('can:customers.update')->name('customers.update');
+    Route::delete('/customers/{customer}', [CustomerController::class, 'destroy'])->middleware('can:customers.delete')->name('customers.destroy');
 });
 
 require __DIR__.'/auth.php';

@@ -35,6 +35,7 @@ export const navigation = [
         items: [
             { label: 'Giao diện', icon: 'pi pi-palette', route: 'appearance.edit', match: 'appearance.*' },
             { label: 'Cửa hàng', icon: 'pi pi-building', route: 'store.edit', match: 'store.*', can: 'settings.manage' },
+            { label: 'Hạng khách hàng', icon: 'pi pi-star', route: 'customer-tiers.edit', match: 'customer-tiers.*', can: 'settings.manage' },
             { label: 'Người dùng', icon: 'pi pi-users', route: 'users.index', match: 'users.*', can: 'users.view' },
             { label: 'Vai trò & quyền', icon: 'pi pi-shield', route: 'roles.index', match: 'roles.*', can: 'roles.manage' },
         ],

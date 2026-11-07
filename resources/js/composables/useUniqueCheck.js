@@ -25,12 +25,13 @@ const DEBOUNCE_MS = 450;
  *
  * @param {'username'|'email'|'phone'} field
  * @param {() => string} getValue      giá trị đang nhập
- * @param {{ ignoreId?: () => number|null, original?: () => string|null }} options
- *        ignoreId: bỏ qua bản ghi này (khi sửa); original: giá trị cũ, không cần kiểm tra lại
+ * @param {{ ignoreId?: () => number|null, original?: () => string|null, url?: () => string }} options
+ *        ignoreId: bỏ qua bản ghi này (khi sửa); original: giá trị cũ, không cần kiểm tra lại;
+ *        url: địa chỉ kiểm tra (mặc định route('users.check'); khách hàng dùng route('customers.check'))
  *
  * status: 'idle' | 'checking' | 'ok' | 'taken' | 'invalid'
  */
-export function useUniqueCheck(field, getValue, { ignoreId = () => null, original = () => null } = {}) {
+export function useUniqueCheck(field, getValue, { ignoreId = () => null, original = () => null, url = () => route('users.check') } = {}) {
     const status = ref('idle');
     const message = ref('');
 
@@ -76,7 +77,7 @@ export function useUniqueCheck(field, getValue, { ignoreId = () => null, origina
             const ignore = ignoreId();
             if (ignore) params.set('ignore', String(ignore));
 
-            const res = await fetch(`${route('users.check')}?${params}`, {
+            const res = await fetch(`${url()}?${params}`, {
                 headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 credentials: 'same-origin',
                 signal: controller.signal,
