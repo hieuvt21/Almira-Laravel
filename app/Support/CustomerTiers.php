@@ -11,12 +11,17 @@ use App\Models\Setting;
  */
 class CustomerTiers
 {
-    /** Biểu tượng cho phép: lấy từ PrimeIcons (thư viện đã cài sẵn trong dự án). */
+    /** Biểu tượng gợi ý (PrimeIcons). Người dùng cũng có thể gõ tên biểu tượng PrimeIcons khác, dạng `pi-xxx`. */
     public const ICONS = [
         'pi-star-fill', 'pi-star', 'pi-user', 'pi-heart-fill', 'pi-bookmark-fill', 'pi-gift',
         'pi-bolt', 'pi-verified', 'pi-trophy', 'pi-shield', 'pi-flag-fill', 'pi-thumbs-up-fill',
-        'pi-sun', 'pi-tag', 'pi-circle-fill',
+        'pi-sun', 'pi-moon', 'pi-tag', 'pi-tags', 'pi-circle-fill', 'pi-users', 'pi-wallet', 'pi-money-bill',
+        'pi-credit-card', 'pi-shopping-bag', 'pi-shopping-cart', 'pi-percentage', 'pi-bell', 'pi-face-smile',
+        'pi-key', 'pi-briefcase', 'pi-building', 'pi-home', 'pi-megaphone', 'pi-box',
     ];
+
+    /** Tên biểu tượng PrimeIcons hợp lệ, ví dụ `pi-star-fill`. */
+    public const ICON_PATTERN = '/^pi-[a-z0-9]+(-[a-z0-9]+)*$/';
 
     /** Màu mặc định theo thứ tự hạng: thấp -> cao (khớp với TierBadge cũ). */
     public const COLORS = ['#64748b', '#0284c7', '#0d9488', '#a16207', '#ea580c', '#7c3aed', '#db2777', '#334155'];
@@ -26,11 +31,11 @@ class CustomerTiers
         return [
             'enabled' => true,
             'tiers' => [
-                ['name' => 'Thành viên', 'min_spent' => 0, 'discount' => 0, 'color' => self::COLORS[0], 'icon' => 'pi-user'],
-                ['name' => 'Thân thiết', 'min_spent' => 2000000, 'discount' => 1, 'color' => self::COLORS[1], 'icon' => 'pi-heart-fill'],
-                ['name' => 'Bạc', 'min_spent' => 5000000, 'discount' => 2, 'color' => self::COLORS[2], 'icon' => 'pi-star-fill'],
-                ['name' => 'Vàng', 'min_spent' => 10000000, 'discount' => 3, 'color' => self::COLORS[3], 'icon' => 'pi-trophy'],
-                ['name' => 'VIP', 'min_spent' => 30000000, 'discount' => 5, 'color' => self::COLORS[4], 'icon' => 'pi-verified'],
+                ['name' => 'Mới', 'min_spent' => 0, 'discount' => 0, 'color' => '#0d9488', 'icon' => 'pi-user'],
+                ['name' => 'Bạc', 'min_spent' => 2000000, 'discount' => 1, 'color' => '#64748b', 'icon' => 'pi-shield'],
+                ['name' => 'Vàng', 'min_spent' => 5000000, 'discount' => 2, 'color' => '#a16207', 'icon' => 'pi-star-fill'],
+                ['name' => 'Kim cương', 'min_spent' => 10000000, 'discount' => 3, 'color' => '#0284c7', 'icon' => 'pi-verified'],
+                ['name' => 'Vip', 'min_spent' => 30000000, 'discount' => 5, 'color' => '#7c3aed', 'icon' => 'pi-trophy'],
             ],
         ];
     }
@@ -67,7 +72,7 @@ class CustomerTiers
             if (! preg_match('/^#[0-9a-fA-F]{6}$/', $tier['color'])) {
                 $tier['color'] = self::COLORS[$i % count(self::COLORS)];
             }
-            if (! in_array($tier['icon'], self::ICONS, true)) {
+            if (! preg_match(self::ICON_PATTERN, $tier['icon'])) {
                 $tier['icon'] = 'pi-star-fill';
             }
         }

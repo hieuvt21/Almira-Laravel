@@ -41,7 +41,7 @@ class CustomerExchangeController extends Controller
         $rows = [$header];
 
         Customer::query()
-            ->search((string) $request->query('search', ''))
+            ->search((string) $request->query('search', ''), in_array($request->query('scope'), ['extra', 'year'], true) ? $request->query('scope') : 'basic')
             ->inTier($tier)
             ->orderedBy($sort)
             ->each(function (Customer $c) use (&$rows, $tiersOn) {

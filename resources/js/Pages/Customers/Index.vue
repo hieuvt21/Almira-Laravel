@@ -32,7 +32,7 @@ import ImportDialog from './Partials/ImportDialog.vue';
 
 const props = defineProps({
     customers: { type: Object, required: true },
-    filters: { type: Object, default: () => ({ search: '', sort: 'newest', tier: null }) },
+    filters: { type: Object, default: () => ({ search: '', scope: 'basic', sort: 'newest', tier: null }) },
     tiersEnabled: { type: Boolean, default: false },
     tiers: { type: Array, default: () => [] },
     avatarPresets: { type: Array, default: () => [] },
@@ -89,19 +89,35 @@ const sortOptions = [
     { value: 'spent_asc', label: 'Chi tiêu (thấp → cao)' },
 ];
 
+const ALL_TIERS = 'all'; // PrimeVue Select không hiện lựa chọn có giá trị null, nên dùng giá trị riêng
 const search = ref(props.filters.search ?? '');
 const sort = ref(props.filters.sort ?? 'newest');
-const tier = ref(props.filters.tier ?? null);
+const tier = ref(props.filters.tier ?? ALL_TIERS);
+// Tìm theo: 'basic' = tên, mã, số điện thoại; 'extra' = địa chỉ, ghi chú
+const scopeOptions = [
+    { value: 'basic', icon: 'pi-user', label: 'Tên, số điện thoại, mã khách', hint: 'Tìm theo tên, số điện thoại hoặc mã khách' },
+    { value: 'extra', icon: 'pi-map-marker', label: 'Địa chỉ, ghi chú', hint: 'Tìm trong địa chỉ và ghi chú' },
+    { value: 'year', icon: 'pi-calendar', label: 'Năm sinh', hint: 'Tìm theo năm sinh, ví dụ 1990' },
+];
+const scope = ref(scopeOptions.some((o) => o.value === props.filters.scope) ? props.filters.scope : 'basic');
+const scopeInfo = computed(() => scopeOptions.find((o) => o.value === scope.value));
+const searchPlaceholder = computed(() => scopeInfo.value.hint);
+// Bấm biểu tượng trong ô tìm kiếm để chuyển sang kiểu tìm kế tiếp
+const nextScope = () => {
+    const i = scopeOptions.findIndex((o) => o.value === scope.value);
+    scope.value = scopeOptions[(i + 1) % scopeOptions.length].value;
+};
 
 const tierOptions = computed(() => [
-    { value: null, label: 'Tất cả hạng' },
+    { value: ALL_TIERS, label: 'Tất cả hạng' },
     ...props.tiers.map((t) => ({ value: t.level, label: t.name })),
 ]);
 
 const queryParams = (extra = {}) => ({
     search: search.value || undefined,
+    scope: search.value && scope.value !== 'basic' ? scope.value : undefined,
     sort: sort.value !== 'newest' ? sort.value : undefined,
-    tier: tier.value ?? undefined,
+    tier: tier.value !== ALL_TIERS ? tier.value : undefined,
     ...extra,
 });
 
@@ -114,6 +130,8 @@ watch(search, () => {
     searchTimer = setTimeout(() => visit(), 300);
 });
 watch([sort, tier], () => visit());
+// Đổi phạm vi tìm: chỉ tải lại khi đang có từ khóa
+watch(scope, () => search.value && visit());
 
 const onPage = (e) => visit({ page: e.page + 1 });
 const first = computed(() => (props.customers.current_page - 1) * props.customers.per_page);
@@ -337,14 +355,18 @@ function openDetail(c) {
     <AppLayout title="Khách hàng">
         <div class="al-panel al-fill">
             <div class="al-toolbar">
-                <IconField class="al-search">
+                <IconField class="al-search cu-search">
                     <InputIcon class="pi pi-search" />
-                    <InputText
-                        v-model="search"
-                        placeholder="Tìm theo tên, số điện thoại hoặc mã khách"
-                        aria-label="Tìm khách hàng"
-                        fluid
-                    />
+                    <InputText v-model="search" :placeholder="searchPlaceholder" aria-label="Tìm khách hàng" fluid />
+                    <button
+                        type="button"
+                        class="cu-scope"
+                        :title="`Đang tìm theo: ${scopeInfo.label}. Bấm để đổi kiểu tìm.`"
+                        :aria-label="`Đang tìm theo ${scopeInfo.label}. Bấm để đổi kiểu tìm kiếm.`"
+                        @click="nextScope"
+                    >
+                        <i :class="['pi', scopeInfo.icon]" aria-hidden="true" />
+                    </button>
                 </IconField>
                 <Select
                     v-model="sort"
@@ -408,13 +430,13 @@ function openDetail(c) {
                 <Column field="name" header="Họ tên">
                     <template #body="{ data }">
                         <div class="user-cell">
-                            <div class="cu-who cu-who--row">
-                                <UserAvatar :name="data.name" :url="data.avatar_url" />
-                                <TierBadge v-if="tiersEnabled" :tier="data.tier" />
-                            </div>
+                            <UserAvatar :name="data.name" :url="data.avatar_url" />
                             <button type="button" class="cu-link" @click="openDetail(data)">{{ data.name }}</button>
                         </div>
                     </template>
+                </Column>
+                <Column v-if="tiersEnabled" header="Hạng" style="width: 9rem">
+                    <template #body="{ data }"><TierBadge :tier="data.tier" /></template>
                 </Column>
                 <Column field="phone" header="Số điện thoại">
                     <template #body="{ data }">{{ data.phone ? formatPhone(data.phone) : '—' }}</template>
@@ -431,7 +453,7 @@ function openDetail(c) {
                 <Column field="address" header="Địa chỉ">
                     <template #body="{ data }">{{ data.address || '—' }}</template>
                 </Column>
-                <Column header="Chi tiêu" bodyStyle="text-align: right" headerStyle="justify-content: flex-end">
+                <Column header="Chi tiêu" headerClass="cu-col-right" bodyClass="cu-col-right">
                     <template #body="{ data }">{{ money(data.total_spent) }}</template>
                 </Column>
                 <Column header="" style="width: 7rem">
@@ -711,7 +733,14 @@ function openDetail(c) {
 }
 .cu-who { flex: none; display: flex; flex-direction: column; align-items: center; gap: 0.45rem; max-width: 6.5rem; }
 .cu-who .tier-badge { max-width: 100%; }
-.cu-who--row { max-width: 7rem; padding: 0.15rem 0; }
+.cu-search { position: relative; flex: 1 1 20rem; }
+.cu-search .p-inputtext { padding-right: 2.8rem; }
+.cu-scope { position: absolute; top: 50%; right: 0.35rem; transform: translateY(-50%); display: grid; place-items: center; width: 2rem; height: 2rem; border: 0; border-radius: 999px; background: var(--al-primary-soft); color: var(--al-primary); cursor: pointer; }
+.cu-scope:hover { background: color-mix(in srgb, var(--al-primary) 22%, transparent); }
+.cu-scope:focus-visible { outline: 2px solid var(--al-primary); outline-offset: 2px; }
+/* Cột số tiền: tiêu đề và nội dung cùng căn phải */
+.cu-col-right { text-align: right !important; }
+.cu-col-right .p-datatable-column-header-content { justify-content: flex-end; }
 .cu-lines { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .cu-name { margin: 0 0 0.1rem; font-size: 1.05rem; font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; overflow-wrap: anywhere; }
 .cu-line { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0; font-size: 0.88rem; line-height: 1.35; overflow-wrap: anywhere; }
