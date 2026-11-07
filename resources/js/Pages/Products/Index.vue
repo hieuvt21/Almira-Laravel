@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
@@ -12,14 +12,17 @@ import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import Tag from 'primevue/tag';
 import Textarea from 'primevue/textarea';
+import FieldStatus from '@/Components/FieldStatus.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import AppDialog from '@/Components/AppDialog.vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermission } from '@/composables/usePermission';
 import { useMoney } from '@/composables/useMoney';
+import { useUniqueCheck } from '@/composables/useUniqueCheck';
 
 const props = defineProps({
-    products: { type: Array, default: () => [] },
+    products: { type: Object, required: true },
+    filters: { type: Object, default: () => ({ search: '', category: null, status: null }) },
     categories: { type: Array, default: () => [] },
     units: { type: Array, default: () => [] },
     priceLists: { type: Array, default: () => [] },
@@ -29,7 +32,45 @@ const { can } = usePermission();
 const { money, config } = useMoney();
 const confirm = useConfirm();
 
-const filters = ref({ global: { value: null, matchMode: 'contains' } });
+/* ---------- Tìm kiếm, lọc, phân trang (xử lý ở server) ---------- */
+const ALL = 'all'; // PrimeVue Select không hiện lựa chọn có giá trị null
+const search = ref(props.filters.search ?? '');
+const categoryFilter = ref(props.filters.category ?? ALL);
+const statusFilter = ref(props.filters.status ?? ALL);
+
+const categoryFilterOptions = computed(() => [
+    { value: ALL, label: 'Tất cả danh mục' },
+    { value: 'none', label: 'Chưa phân loại' },
+    ...props.categories.map((c) => ({ value: String(c.id), label: c.name })),
+]);
+const statusOptions = [
+    { value: ALL, label: 'Mọi trạng thái' },
+    { value: 'active', label: 'Đang bán' },
+    { value: 'inactive', label: 'Ngừng bán' },
+];
+
+const visit = (extra = {}) =>
+    router.get(
+        route('products.index'),
+        {
+            search: search.value || undefined,
+            category: categoryFilter.value !== ALL ? categoryFilter.value : undefined,
+            status: statusFilter.value !== ALL ? statusFilter.value : undefined,
+            ...extra,
+        },
+        { preserveState: true, preserveScroll: true, replace: true },
+    );
+
+let searchTimer = null;
+watch(search, () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => visit(), 300);
+});
+watch([categoryFilter, statusFilter], () => visit());
+onBeforeUnmount(() => clearTimeout(searchTimer));
+
+const onPage = (e) => visit({ page: e.page + 1 });
+const first = computed(() => (props.products.current_page - 1) * props.products.per_page);
 const dialog = ref(false);
 const editing = ref(null);
 const imagePreview = ref(null);
@@ -52,6 +93,16 @@ const taxOptions = computed(() => (config.value.tax_rates ?? []).map((r) => ({ l
 const activeLists = computed(() => props.priceLists.filter((l) => l.is_active));
 const defaultList = computed(() => props.priceLists.find((l) => l.is_default));
 const categoryOptions = computed(() => props.categories.filter((c) => c.is_active || c.id === form.category_id));
+
+// Kiểm tra trùng mã / mã vạch ngay khi nhập (khi sửa: bỏ qua chính sản phẩm đang sửa)
+const checkOptions = (key) => ({
+    ignoreId: () => editing.value?.id ?? null,
+    original: () => editing.value?.[key] ?? null,
+    url: () => route('products.check'),
+});
+const codeCheck = useUniqueCheck('code', () => form.code, checkOptions('code'));
+const barcodeCheck = useUniqueCheck('barcode', () => form.barcode, checkOptions('barcode'));
+const hasConflict = computed(() => [codeCheck, barcodeCheck].some((c) => ['taken', 'invalid'].includes(c.status)));
 
 // Xóa lỗi cũ của ô vừa sửa
 ['code', 'name', 'barcode', 'tax_rate'].forEach((f) => watch(() => form[f], () => form.clearErrors(f)));
@@ -79,6 +130,8 @@ function resetImage() {
 
 function openCreate() {
     editing.value = null;
+    codeCheck.reset();
+    barcodeCheck.reset();
     form.reset();
     form.clearErrors();
     form.tax_rate = taxOn.value ? Number(config.value.tax_default_rate) : 0;
@@ -89,6 +142,8 @@ function openCreate() {
 
 function openEdit(p) {
     editing.value = p;
+    codeCheck.reset();
+    barcodeCheck.reset();
     form.clearErrors();
     form.code = p.code;
     form.name = p.name;
@@ -127,6 +182,8 @@ function clearImage() {
 const shownImage = computed(() => imagePreview.value ?? (form.remove_image ? null : editing.value?.image_url ?? null));
 
 function submit() {
+    if (hasConflict.value) return;
+
     form.transform((data) => {
         const payload = {
             ...data,
@@ -188,35 +245,44 @@ const err = (key) => form.errors[key];
 
     <AppLayout title="Sản phẩm">
         <div class="al-panel al-fill">
+            <div class="al-toolbar">
+                <IconField class="al-search">
+                    <InputIcon class="pi pi-search" />
+                    <InputText v-model="search" placeholder="Tìm theo tên, mã hoặc mã vạch" aria-label="Tìm sản phẩm" fluid />
+                </IconField>
+                <Select
+                    v-model="categoryFilter"
+                    :options="categoryFilterOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    aria-label="Lọc theo danh mục"
+                    style="min-width: 11rem"
+                />
+                <Select
+                    v-model="statusFilter"
+                    :options="statusOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    aria-label="Lọc theo trạng thái"
+                    style="min-width: 10rem"
+                />
+                <Button v-if="can('products.create')" label="Thêm sản phẩm" icon="pi pi-plus" @click="openCreate" />
+            </div>
+
             <DataTable
-                :value="products"
-                v-model:filters="filters"
-                :globalFilterFields="['name', 'code', 'barcode', 'category']"
+                :value="products.data"
                 dataKey="id"
+                lazy
                 paginator
-                :rows="15"
-                :rowsPerPageOptions="[15, 30, 50]"
-                sortField="name"
-                :sortOrder="1"
+                :rows="products.per_page"
+                :first="first"
+                :totalRecords="products.total"
+                @page="onPage"
             >
-                <template #header>
-                    <div class="al-toolbar" style="padding: 0; border: 0">
-                        <IconField class="al-search">
-                            <InputIcon class="pi pi-search" />
-                            <InputText
-                                v-model="filters.global.value"
-                                placeholder="Tìm theo tên, mã, mã vạch hoặc danh mục"
-                                aria-label="Tìm sản phẩm"
-                                fluid
-                            />
-                        </IconField>
-                        <Button v-if="can('products.create')" label="Thêm sản phẩm" icon="pi pi-plus" @click="openCreate" />
-                    </div>
-                </template>
 
                 <template #empty>Chưa có sản phẩm nào khớp với tìm kiếm.</template>
 
-                <Column field="name" header="Sản phẩm" sortable>
+                <Column field="name" header="Sản phẩm">
                     <template #body="{ data }">
                         <div style="display: flex; align-items: center; gap: 0.6rem">
                             <img
@@ -234,17 +300,17 @@ const err = (key) => form.errors[key];
                         </div>
                     </template>
                 </Column>
-                <Column field="code" header="Mã" sortable />
+                <Column field="code" header="Mã" />
                 <Column field="barcode" header="Mã vạch">
                     <template #body="{ data }">{{ data.barcode || '—' }}</template>
                 </Column>
-                <Column field="category" header="Danh mục" sortable>
+                <Column field="category" header="Danh mục">
                     <template #body="{ data }">{{ data.category || '—' }}</template>
                 </Column>
                 <Column header="Đơn vị">
                     <template #body="{ data }">{{ unitSummary(data) }}</template>
                 </Column>
-                <Column header="Giá bán" style="text-align: right">
+                <Column header="Giá bán" headerClass="pr-col-right" bodyClass="pr-col-right">
                     <template #body="{ data }">
                         <span v-if="basePrice(data) !== null">{{ money(basePrice(data)) }}</span>
                         <span v-else>—</span>
@@ -282,14 +348,33 @@ const err = (key) => form.errors[key];
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0 1rem">
                     <div class="field">
                         <label for="p-code">Mã sản phẩm</label>
-                        <InputText id="p-code" v-model="form.code" autocomplete="off" fluid :invalid="!!err('code')" />
+                        <InputText
+                            id="p-code"
+                            v-model="form.code"
+                            autocomplete="off"
+                            autocapitalize="characters"
+                            spellcheck="false"
+                            fluid
+                            :invalid="!!err('code') || ['taken', 'invalid'].includes(codeCheck.status)"
+                            @blur="codeCheck.check()"
+                        />
                         <small v-if="err('code')" class="field-error">{{ err('code') }}</small>
-                        <small v-else-if="!editing" class="field-hint">Bỏ trống để tự động đánh số.</small>
+                        <FieldStatus v-else :status="codeCheck.status" :message="codeCheck.message" />
+                        <small v-if="!err('code') && codeCheck.status === 'idle' && !editing" class="field-hint">Bỏ trống để tự động đánh số.</small>
                     </div>
                     <div class="field">
                         <label for="p-barcode">Mã vạch <span class="field-hint">(không bắt buộc)</span></label>
-                        <InputText id="p-barcode" v-model="form.barcode" autocomplete="off" fluid :invalid="!!err('barcode')" />
+                        <InputText
+                            id="p-barcode"
+                            v-model="form.barcode"
+                            autocomplete="off"
+                            spellcheck="false"
+                            fluid
+                            :invalid="!!err('barcode') || ['taken', 'invalid'].includes(barcodeCheck.status)"
+                            @blur="barcodeCheck.check()"
+                        />
                         <small v-if="err('barcode')" class="field-error">{{ err('barcode') }}</small>
+                        <FieldStatus v-else :status="barcodeCheck.status" :message="barcodeCheck.message" />
                     </div>
                     <div class="field">
                         <label for="p-category">Danh mục</label>
@@ -412,9 +497,15 @@ const err = (key) => form.errors[key];
 
                 <div class="dialog-actions">
                     <Button type="button" label="Hủy" severity="secondary" outlined @click="dialog = false" />
-                    <Button type="submit" :label="editing ? 'Lưu thay đổi' : 'Thêm sản phẩm'" :loading="form.processing" />
+                    <Button type="submit" :label="editing ? 'Lưu thay đổi' : 'Thêm sản phẩm'" :loading="form.processing" :disabled="hasConflict" />
                 </div>
             </form>
         </AppDialog>
     </AppLayout>
 </template>
+
+<style>
+/* Cột giá: tiêu đề và nội dung cùng căn phải */
+.pr-col-right { text-align: right !important; }
+.pr-col-right .p-datatable-column-header-content { justify-content: flex-end; }
+</style>

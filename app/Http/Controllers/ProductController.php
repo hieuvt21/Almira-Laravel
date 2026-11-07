@@ -7,6 +7,7 @@ use App\Models\PriceList;
 use App\Models\Product;
 use App\Models\Unit;
 use App\Support\DocumentNumber;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,12 +19,21 @@ use Inertia\Response;
 
 class ProductController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $search = trim((string) $request->query('search', ''));
+        $category = $request->query('category');
+        $status = in_array($request->query('status'), ['active', 'inactive'], true) ? $request->query('status') : null;
+
         $products = Product::with(['category:id,name', 'units.unit:id,name', 'units.prices'])
+            ->search($search)
+            ->when($category === 'none', fn ($q) => $q->whereNull('category_id'))
+            ->when(is_numeric($category), fn ($q) => $q->where('category_id', (int) $category))
+            ->when($status, fn ($q) => $q->where('is_active', $status === 'active'))
             ->orderBy('name')
-            ->get()
-            ->map(fn (Product $p) => [
+            ->paginate(15)
+            ->withQueryString()
+            ->through(fn (Product $p) => [
                 'id' => $p->id,
                 'code' => $p->code,
                 'name' => $p->name,
@@ -48,9 +58,42 @@ class ProductController extends Controller
 
         return Inertia::render('Products/Index', [
             'products' => $products,
+            'filters' => ['search' => $search, 'category' => $category ?: null, 'status' => $status],
             'categories' => Category::orderBy('name')->get(['id', 'name', 'is_active']),
             'units' => Unit::orderBy('name')->get(['id', 'name', 'is_active']),
             'priceLists' => PriceList::orderByDesc('is_default')->orderBy('name')->get(['id', 'name', 'is_default', 'is_active']),
+        ]);
+    }
+
+    /**
+     * Kiểm tra trùng mã sản phẩm / mã vạch ngay khi nhập.
+     * Cùng định dạng trả về với users.check để dùng chung composable useUniqueCheck.
+     */
+    public function check(Request $request): JsonResponse
+    {
+        $field = (string) $request->input('field');
+        abort_unless(in_array($field, ['code', 'barcode'], true), 422);
+
+        $value = trim((string) $request->input('value'));
+        $ignore = $request->integer('ignore') ?: null;
+
+        if ($value === '') {
+            return response()->json(['valid' => true, 'available' => true]);
+        }
+        if (! preg_match('/^[A-Za-z0-9._-]+$/', $value) || strlen($value) > 50) {
+            return response()->json(['valid' => false, 'message' => 'Chỉ gồm chữ, số, dấu chấm, gạch dưới hoặc gạch ngang (tối đa 50 ký tự).']);
+        }
+
+        $found = Product::where($field, $value)
+            ->when($ignore, fn ($q) => $q->whereKeyNot($ignore))
+            ->first(['id', 'name']);
+
+        $label = $field === 'code' ? 'Mã này' : 'Mã vạch này';
+
+        return response()->json([
+            'valid' => true,
+            'available' => ! $found,
+            'message' => $found ? "{$label} đã dùng cho sản phẩm \"{$found->name}\"." : null,
         ]);
     }
 

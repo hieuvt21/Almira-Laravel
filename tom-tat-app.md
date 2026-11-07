@@ -10,9 +10,9 @@
 - Font Be Vietnam Pro (`@fontsource`), giao diện kính mờ, CSS riêng ở `resources/css/almira.css` (tiền tố `al-`), alias `@` = `resources/js`.
 
 ## Đã làm
-Đăng nhập (tên đăng nhập / SĐT / email), phân quyền, Người dùng (avatar, kiểm tra trùng khi nhập), Vai trò & quyền, Giao diện (màu chủ đề, logo, tên cửa hàng, thanh bên), Cửa hàng (thông tin, tiền tệ & thuế, đánh số chứng từ), Hồ sơ cá nhân, Dashboard (trang chung sau đăng nhập, khu báo cáo còn trống), Catalog: Danh mục, Đơn vị tính, Bảng giá (trang `/catalog`, 3 tab) và Sản phẩm (nhiều đơn vị quy đổi, mỗi đơn vị có giá theo từng bảng giá, 1 mã vạch, thuế chung, 1 ảnh).
+Đăng nhập (tên đăng nhập / SĐT / email), phân quyền, Người dùng (avatar, kiểm tra trùng khi nhập), Vai trò & quyền, Giao diện (màu chủ đề, logo, tên cửa hàng, thanh bên), Cửa hàng (thông tin, tiền tệ & thuế, đánh số chứng từ), Hồ sơ cá nhân, Dashboard (trang chung sau đăng nhập, khu báo cáo còn trống), Catalog: Danh mục, Đơn vị tính, Bảng giá (trang `/catalog`, 3 tab) và Sản phẩm (tìm kiếm/lọc/phân trang ở server, kiểm tra trùng mã & mã vạch khi nhập qua `products.check`, nhiều đơn vị quy đổi, mỗi đơn vị có giá theo từng bảng giá, 1 mã vạch, thuế chung, 1 ảnh).
 
-**Chưa làm (dự kiến theo thứ tự):** Khách hàng → Kho → Nhập hàng → Bán hàng/POS (hóa đơn, thanh toán, hoàn trả) → Ca làm việc → Báo cáo. Cài đặt bán hàng (mẫu hóa đơn, phương thức thanh toán, chính sách giảm giá/hoàn trả) làm cùng module bán hàng. Chưa có nhật ký hoạt động.
+**Chưa làm (dự kiến theo thứ tự):** Kho → Nhập hàng → Bán hàng/POS (hóa đơn, thanh toán, hoàn trả) → Ca làm việc → Báo cáo. Cài đặt bán hàng (mẫu hóa đơn, phương thức thanh toán, chính sách giảm giá/hoàn trả) làm cùng module bán hàng. Chưa có nhật ký hoạt động.
 
 ## Xác thực và phân quyền
 - Spatie `laravel-permission`. Vai trò mặc định: `admin`, `manager`, `cashier`, `warehouse` (không xóa/đổi tên được; admin có toàn quyền qua `Gate::before`). Admin tạo thêm vai trò ở giao diện.

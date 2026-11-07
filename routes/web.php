@@ -57,7 +57,9 @@ Route::middleware('auth')->group(function () {
     Route::put('/users/{user}', [UserController::class, 'update'])->middleware('can:users.update')->name('users.update');
     Route::delete('/users/{user}', [UserController::class, 'destroy'])->middleware('can:users.delete')->name('users.destroy');
 
-    // Sản phẩm
+    // Sản phẩm (route cố định /products/check phải đứng trước route có {product})
+    Route::get('/products/check', [ProductController::class, 'check'])
+        ->middleware(['can:products.view', 'throttle:90,1'])->name('products.check');
     Route::get('/products', [ProductController::class, 'index'])->middleware('can:products.view')->name('products.index');
     Route::post('/products', [ProductController::class, 'store'])->middleware('can:products.create')->name('products.store');
     Route::put('/products/{product}', [ProductController::class, 'update'])->middleware('can:products.update')->name('products.update');
