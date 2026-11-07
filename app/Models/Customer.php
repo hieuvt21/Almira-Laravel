@@ -83,13 +83,19 @@ class Customer extends Model
     /* ---------- Bộ lọc dùng cho danh sách, xuất Excel ---------- */
 
     /**
-     * @param  string  $scope  'basic' = tên, mã, số điện thoại; 'extra' = địa chỉ, ghi chú
+     * @param  string  $scope  'basic' = tên, mã, số điện thoại; 'extra' = địa chỉ, ghi chú; 'year' = năm sinh (gõ 1990 hoặc 199 để lọc theo đầu năm)
      */
     public function scopeSearch(Builder $query, string $search, string $scope = 'basic'): Builder
     {
         $search = trim($search);
         if ($search === '') {
             return $query;
+        }
+
+        if ($scope === 'year') {
+            $digits = preg_replace('/\D+/', '', $search);
+
+            return $digits === '' ? $query->whereRaw('1 = 0') : $query->where('birth_year', 'like', "{$digits}%");
         }
 
         if ($scope === 'extra') {

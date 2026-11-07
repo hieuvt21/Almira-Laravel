@@ -94,12 +94,19 @@ const search = ref(props.filters.search ?? '');
 const sort = ref(props.filters.sort ?? 'newest');
 const tier = ref(props.filters.tier ?? ALL_TIERS);
 // Tìm theo: 'basic' = tên, mã, số điện thoại; 'extra' = địa chỉ, ghi chú
-const scope = ref(props.filters.scope === 'extra' ? 'extra' : 'basic');
 const scopeOptions = [
-    { value: 'basic', label: 'Khách hàng', icon: 'pi pi-user', hint: 'Tìm theo tên, số điện thoại hoặc mã khách' },
-    { value: 'extra', label: 'Địa chỉ, ghi chú', icon: 'pi pi-map-marker', hint: 'Tìm trong địa chỉ và ghi chú' },
+    { value: 'basic', icon: 'pi-user', label: 'Tên, số điện thoại, mã khách', hint: 'Tìm theo tên, số điện thoại hoặc mã khách' },
+    { value: 'extra', icon: 'pi-map-marker', label: 'Địa chỉ, ghi chú', hint: 'Tìm trong địa chỉ và ghi chú' },
+    { value: 'year', icon: 'pi-calendar', label: 'Năm sinh', hint: 'Tìm theo năm sinh, ví dụ 1990' },
 ];
-const searchPlaceholder = computed(() => scopeOptions.find((o) => o.value === scope.value).hint);
+const scope = ref(scopeOptions.some((o) => o.value === props.filters.scope) ? props.filters.scope : 'basic');
+const scopeInfo = computed(() => scopeOptions.find((o) => o.value === scope.value));
+const searchPlaceholder = computed(() => scopeInfo.value.hint);
+// Bấm biểu tượng trong ô tìm kiếm để chuyển sang kiểu tìm kế tiếp
+const nextScope = () => {
+    const i = scopeOptions.findIndex((o) => o.value === scope.value);
+    scope.value = scopeOptions[(i + 1) % scopeOptions.length].value;
+};
 
 const tierOptions = computed(() => [
     { value: ALL_TIERS, label: 'Tất cả hạng' },
@@ -348,25 +355,19 @@ function openDetail(c) {
     <AppLayout title="Khách hàng">
         <div class="al-panel al-fill">
             <div class="al-toolbar">
-                <div class="cu-searchbar">
-                    <IconField class="al-search">
-                        <InputIcon class="pi pi-search" />
-                        <InputText v-model="search" :placeholder="searchPlaceholder" aria-label="Tìm khách hàng" fluid />
-                    </IconField>
-                    <SelectButton
-                        v-model="scope"
-                        :options="scopeOptions"
-                        optionValue="value"
-                        :allowEmpty="false"
-                        size="small"
-                        aria-label="Phạm vi tìm kiếm"
+                <IconField class="al-search cu-search">
+                    <InputIcon class="pi pi-search" />
+                    <InputText v-model="search" :placeholder="searchPlaceholder" aria-label="Tìm khách hàng" fluid />
+                    <button
+                        type="button"
+                        class="cu-scope"
+                        :title="`Đang tìm theo: ${scopeInfo.label}. Bấm để đổi kiểu tìm.`"
+                        :aria-label="`Đang tìm theo ${scopeInfo.label}. Bấm để đổi kiểu tìm kiếm.`"
+                        @click="nextScope"
                     >
-                        <template #option="{ option }">
-                            <i :class="option.icon" aria-hidden="true" />
-                            <span>{{ option.label }}</span>
-                        </template>
-                    </SelectButton>
-                </div>
+                        <i :class="['pi', scopeInfo.icon]" aria-hidden="true" />
+                    </button>
+                </IconField>
                 <Select
                     v-model="sort"
                     :options="sortOptions"
@@ -732,10 +733,11 @@ function openDetail(c) {
 }
 .cu-who { flex: none; display: flex; flex-direction: column; align-items: center; gap: 0.45rem; max-width: 6.5rem; }
 .cu-who .tier-badge { max-width: 100%; }
-.cu-searchbar { display: flex; flex: 1 1 20rem; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
-.cu-searchbar .al-search { flex: 1 1 14rem; min-width: 0; }
-.cu-searchbar .p-togglebutton { white-space: nowrap; }
-.cu-searchbar .p-togglebutton i { margin-right: 0.35rem; }
+.cu-search { position: relative; flex: 1 1 20rem; }
+.cu-search .p-inputtext { padding-right: 2.8rem; }
+.cu-scope { position: absolute; top: 50%; right: 0.35rem; transform: translateY(-50%); display: grid; place-items: center; width: 2rem; height: 2rem; border: 0; border-radius: 999px; background: var(--al-primary-soft); color: var(--al-primary); cursor: pointer; }
+.cu-scope:hover { background: color-mix(in srgb, var(--al-primary) 22%, transparent); }
+.cu-scope:focus-visible { outline: 2px solid var(--al-primary); outline-offset: 2px; }
 /* Cột số tiền: tiêu đề và nội dung cùng căn phải */
 .cu-col-right { text-align: right !important; }
 .cu-col-right .p-datatable-column-header-content { justify-content: flex-end; }

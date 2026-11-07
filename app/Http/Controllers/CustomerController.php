@@ -24,7 +24,7 @@ class CustomerController extends Controller
     {
         $search = trim((string) $request->query('search', ''));
         $sort = in_array($request->query('sort'), self::SORTS, true) ? $request->query('sort') : 'newest';
-        $scope = $request->query('scope') === 'extra' ? 'extra' : 'basic';
+        $scope = in_array($request->query('scope'), ['extra', 'year'], true) ? $request->query('scope') : 'basic';
         $tier = is_numeric($request->query('tier')) ? (int) $request->query('tier') : null;
 
         $customers = Customer::query()
