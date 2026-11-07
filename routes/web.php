@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Controllers\AppearanceController;
+use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CustomerExchangeController;
 use App\Http\Controllers\CustomerTierController;
+use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\StoreSettingsController;
@@ -54,6 +56,23 @@ Route::middleware('auth')->group(function () {
     Route::post('/users', [UserController::class, 'store'])->middleware('can:users.create')->name('users.store');
     Route::put('/users/{user}', [UserController::class, 'update'])->middleware('can:users.update')->name('users.update');
     Route::delete('/users/{user}', [UserController::class, 'destroy'])->middleware('can:users.delete')->name('users.destroy');
+
+    // Sản phẩm (route cố định /products/check phải đứng trước route có {product})
+    Route::get('/products/check', [ProductController::class, 'check'])
+        ->middleware(['can:products.view', 'throttle:90,1'])->name('products.check');
+    Route::get('/products', [ProductController::class, 'index'])->middleware('can:products.view')->name('products.index');
+    Route::post('/products', [ProductController::class, 'store'])->middleware('can:products.create')->name('products.store');
+    Route::put('/products/{product}', [ProductController::class, 'update'])->middleware('can:products.update')->name('products.update');
+    Route::delete('/products/{product}', [ProductController::class, 'destroy'])->middleware('can:products.delete')->name('products.destroy');
+
+    // Danh mục, đơn vị tính, bảng giá
+    Route::get('/catalog', [CatalogController::class, 'index'])->middleware('can:products.view')->name('catalog.index');
+    Route::post('/catalog/{type}', [CatalogController::class, 'store'])->middleware('can:products.update')
+        ->whereIn('type', ['categories', 'units', 'price-lists'])->name('catalog.store');
+    Route::put('/catalog/{type}/{id}', [CatalogController::class, 'update'])->middleware('can:products.update')
+        ->whereIn('type', ['categories', 'units', 'price-lists'])->whereNumber('id')->name('catalog.update');
+    Route::delete('/catalog/{type}/{id}', [CatalogController::class, 'destroy'])->middleware('can:products.delete')
+        ->whereIn('type', ['categories', 'units', 'price-lists'])->whereNumber('id')->name('catalog.destroy');
 
     // Vai trò & quyền
     Route::middleware('can:roles.manage')->prefix('roles')->name('roles.')->group(function () {
