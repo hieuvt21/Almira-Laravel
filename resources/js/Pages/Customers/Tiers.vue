@@ -62,22 +62,48 @@ const rowErrors = computed(() => {
         else if (i > 0 && t.min_spent <= (form.tiers[i - 1].min_spent ?? 0)) problems.min_spent = 'Phải lớn hơn hạng ngay trên.';
 
         if (t.discount === null || t.discount === undefined) problems.discount = 'Nhập % giảm.';
+
+        if (!HEX.test(t.color ?? '')) problems.color = 'Mã màu dạng #rrggbb, ví dụ #0d9488.';
+        if (!ICON.test(t.icon ?? '')) problems.icon = 'Tên biểu tượng dạng pi-xxx, ví dụ pi-star-fill.';
         return problems;
     });
 });
 
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const ICON = /^pi-[a-z0-9]+(-[a-z0-9]+)*$/;
+
 // ColorPicker của PrimeVue trả về mã hex không có dấu #
 const hexOf = (c) => `#${String(c ?? '').replace('#', '')}`;
 const setColor = (t, v) => (t.color = hexOf(v));
+
+// Gõ mã màu: tự thêm dấu #, rút gọn #abc thành #aabbcc khi rời ô
+const typeColor = (t, v) => (t.color = `#${String(v ?? '').replace(/[^0-9a-fA-F]/g, '').slice(0, 6)}`.toLowerCase());
+const finishColor = (t) => {
+    const m = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(t.color ?? '');
+    if (m) t.color = `#${m[1]}${m[1]}${m[2]}${m[2]}${m[3]}${m[3]}`.toLowerCase();
+};
+// Gõ tên biểu tượng PrimeIcons: "star" hoặc "pi pi-star" đều được hiểu là pi-star
+const typeIcon = (t, v) => {
+    const name = String(v ?? '').trim().toLowerCase().replace(/^pi\s+/, '').replace(/\s+/g, '');
+    t.icon = name && !name.startsWith('pi-') ? `pi-${name}` : name;
+};
 const pickerFor = ref(null);
 const iconPop = ref();
+const iconName = ref('');
 function openIcons(e, i) {
     pickerFor.value = i;
+    iconName.value = '';
     iconPop.value.toggle(e);
 }
 function chooseIcon(key) {
     if (pickerFor.value !== null) form.tiers[pickerFor.value].icon = key;
     iconPop.value.hide();
+}
+function applyIconName() {
+    if (pickerFor.value === null) return;
+    const t = form.tiers[pickerFor.value];
+    typeIcon(t, iconName.value);
+    if (ICON.test(t.icon)) iconPop.value.hide();
 }
 
 const serverError = (i, field) => form.errors[`tiers.${i}.${field}`];
@@ -179,8 +205,20 @@ function save() {
                                     :modelValue="String(t.color).replace('#', '')"
                                     format="hex"
                                     :inputId="`tr-color-${i}`"
-                                    :aria-label="`Màu hạng ${t.name}`"
+                                    :aria-label="`Chọn màu hạng ${t.name}`"
                                     @update:modelValue="(v) => setColor(t, v)"
+                                />
+                                <InputText
+                                    :modelValue="t.color"
+                                    class="tr-hex"
+                                    maxlength="7"
+                                    spellcheck="false"
+                                    autocomplete="off"
+                                    placeholder="#rrggbb"
+                                    :aria-label="`Mã màu hạng ${t.name}`"
+                                    :invalid="!!rowError(i, 'color')"
+                                    @update:modelValue="(v) => typeColor(t, v)"
+                                    @blur="finishColor(t)"
                                 />
                                 <Button
                                     type="button"
@@ -193,8 +231,8 @@ function save() {
                                     <i :class="['pi', t.icon]" :style="{ color: t.color }" aria-hidden="true" />
                                 </Button>
                             </div>
-                            <small v-if="serverError(i, 'color') || serverError(i, 'icon')" class="field-error">
-                                {{ serverError(i, 'color') || serverError(i, 'icon') }}
+                            <small v-if="rowError(i, 'color') || rowError(i, 'icon')" class="field-error">
+                                {{ rowError(i, 'color') || rowError(i, 'icon') }}
                             </small>
                         </div>
 
@@ -227,6 +265,21 @@ function save() {
                                 <i :class="['pi', key]" aria-hidden="true" />
                             </button>
                         </div>
+                        <div class="tr-iconname">
+                            <label for="tr-iconname" class="field-hint">Hoặc nhập tên biểu tượng PrimeIcons khác</label>
+                            <div class="tr-iconname-row">
+                                <InputText
+                                    id="tr-iconname"
+                                    v-model="iconName"
+                                    placeholder="vd: pi-crown hoặc crown"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                    @keydown.enter.prevent="applyIconName"
+                                />
+                                <Button type="button" label="Dùng" size="small" :disabled="!iconName.trim()" @click="applyIconName" />
+                            </div>
+                            <a class="field-hint" href="https://primevue.org/icons/" target="_blank" rel="noopener">Xem danh sách biểu tượng</a>
+                        </div>
                     </Popover>
 
                     <small v-if="form.errors.tiers" class="field-error" role="alert">{{ form.errors.tiers }}</small>
@@ -257,15 +310,19 @@ function save() {
 
 <style>
 .tr-form { max-width: 62rem; }
-.tr-head, .tr-row { display: grid; grid-template-columns: 11rem 1.3fr 1.3fr 0.8fr 9rem 3rem; gap: 0.75rem; align-items: start; }
+.tr-head, .tr-row { display: grid; grid-template-columns: 11rem 1.2fr 1.2fr 0.8fr 15rem 3rem; gap: 0.75rem; align-items: start; }
 .tr-head { padding: 0 0 0.4rem; color: var(--al-muted); font-size: 0.8rem; font-weight: 600; }
 .tr-row { padding: 0.7rem 0; border-top: 1px solid var(--al-line); }
 .tr-cell { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
 .tr-badge { align-items: flex-start; padding-top: 0.45rem; }
 .tr-del { align-items: flex-end; }
 .tr-style { display: flex; align-items: center; gap: 0.6rem; padding-top: 0.2rem; }
-.tr-iconbtn { width: 2.4rem; height: 2.4rem; padding: 0 !important; }
-.tr-icons { display: grid; grid-template-columns: repeat(5, 2.6rem); gap: 0.35rem; }
+.tr-iconbtn { width: 2.4rem; height: 2.4rem; padding: 0 !important; flex: none; }
+.tr-hex { width: 6.2rem; font-family: ui-monospace, monospace; }
+.tr-iconname { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.7rem; width: 16.5rem; }
+.tr-iconname-row { display: flex; gap: 0.4rem; }
+.tr-iconname-row .p-inputtext { flex: 1; min-width: 0; }
+.tr-icons { display: grid; grid-template-columns: repeat(6, 2.6rem); gap: 0.35rem; max-height: 14rem; overflow-y: auto; padding: 0.15rem; }
 .tr-icon { display: grid; place-items: center; height: 2.6rem; border: 2px solid transparent; border-radius: 0.7rem; background: rgba(255, 255, 255, 0.6); color: var(--al-text); cursor: pointer; }
 .tr-icon:hover { background: #fff; }
 .tr-icon.is-on { border-color: var(--al-primary); color: var(--al-primary); }

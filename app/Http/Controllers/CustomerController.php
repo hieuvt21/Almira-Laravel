@@ -24,10 +24,11 @@ class CustomerController extends Controller
     {
         $search = trim((string) $request->query('search', ''));
         $sort = in_array($request->query('sort'), self::SORTS, true) ? $request->query('sort') : 'newest';
+        $scope = $request->query('scope') === 'extra' ? 'extra' : 'basic';
         $tier = is_numeric($request->query('tier')) ? (int) $request->query('tier') : null;
 
         $customers = Customer::query()
-            ->search($search)
+            ->search($search, $scope)
             ->inTier($tier)
             ->orderedBy($sort)
             ->paginate(15)
@@ -52,7 +53,7 @@ class CustomerController extends Controller
 
         return Inertia::render('Customers/Index', [
             'customers' => $customers,
-            'filters' => ['search' => $search, 'sort' => $sort, 'tier' => $tier],
+            'filters' => ['search' => $search, 'scope' => $scope, 'sort' => $sort, 'tier' => $tier],
             'tiersEnabled' => $tiers['enabled'],
             'tiers' => $tiers['tiers'],
             'avatarPresets' => User::avatarPresets(),

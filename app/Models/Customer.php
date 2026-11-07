@@ -82,11 +82,18 @@ class Customer extends Model
 
     /* ---------- Bộ lọc dùng cho danh sách, xuất Excel ---------- */
 
-    public function scopeSearch(Builder $query, string $search): Builder
+    /**
+     * @param  string  $scope  'basic' = tên, mã, số điện thoại; 'extra' = địa chỉ, ghi chú
+     */
+    public function scopeSearch(Builder $query, string $search, string $scope = 'basic'): Builder
     {
         $search = trim($search);
         if ($search === '') {
             return $query;
+        }
+
+        if ($scope === 'extra') {
+            return $query->where(fn ($w) => $w->where('address', 'like', "%{$search}%")->orWhere('note', 'like', "%{$search}%"));
         }
 
         $digits = preg_replace('/\D+/', '', $search);

@@ -6,7 +6,6 @@ use App\Models\Setting;
 use App\Support\CustomerTiers;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -30,12 +29,12 @@ class CustomerTierController extends Controller
             'tiers.*.min_spent' => ['required', 'numeric', 'min:0', 'max:100000000000'],
             'tiers.*.discount' => ['required', 'numeric', 'between:0,100'],
             'tiers.*.color' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'tiers.*.icon' => ['required', Rule::in(CustomerTiers::ICONS)],
+            'tiers.*.icon' => ['required', 'string', 'max:40', 'regex:'.CustomerTiers::ICON_PATTERN],
         ], [
             'tiers.*.color.required' => 'Chọn màu cho hạng.',
             'tiers.*.color.regex' => 'Màu không hợp lệ.',
             'tiers.*.icon.required' => 'Chọn biểu tượng cho hạng.',
-            'tiers.*.icon.in' => 'Biểu tượng không hợp lệ.',
+            'tiers.*.icon.regex' => 'Tên biểu tượng dạng pi-xxx, chữ thường, ví dụ pi-star-fill.',
             'tiers.min' => 'Cần ít nhất một hạng.',
             'tiers.max' => 'Tối đa 8 hạng.',
             'tiers.*.name.required' => 'Nhập tên hạng.',
@@ -51,7 +50,7 @@ class CustomerTierController extends Controller
             'min_spent' => (float) $t['min_spent'],
             'discount' => (float) $t['discount'],
             'color' => strtolower($t['color']),
-            'icon' => $t['icon'],
+            'icon' => strtolower($t['icon']),
         ], $data['tiers']));
 
         $errors = [];
