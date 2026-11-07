@@ -40,7 +40,7 @@ const props = defineProps({
     importResult: { type: Object, default: null },
 });
 
-const { can } = usePermission();
+const { can, isAdmin } = usePermission();
 const { money } = useMoney();
 const confirm = useConfirm();
 
@@ -140,16 +140,17 @@ const first = computed(() => (props.customers.current_page - 1) * props.customer
 const excelMenu = ref();
 const importOpen = ref(false);
 const excelItems = computed(() => [
-    { label: 'Nhập từ Excel', icon: 'pi pi-upload', visible: can('customers.create'), command: () => (importOpen.value = true) },
+    { label: 'Nhập từ Excel', icon: 'pi pi-upload', visible: isAdmin.value, command: () => (importOpen.value = true) },
     {
         label: 'Xuất Excel',
         icon: 'pi pi-download',
-        visible: can('customers.update'),
+        visible: isAdmin.value,
         command: () => (window.location.href = route('customers.export', queryParams())),
     },
-    { label: 'Tải file mẫu', icon: 'pi pi-file', visible: can('customers.create'), url: route('customers.template') },
+    { label: 'Tải file mẫu', icon: 'pi pi-file', visible: isAdmin.value, url: route('customers.template') },
 ]);
-const showExcel = computed(() => can('customers.create') || can('customers.update'));
+// Nhập/xuất Excel chỉ dành cho quản trị viên
+const showExcel = computed(() => isAdmin.value);
 
 /* ---------- Sinh nhật ---------- */
 const birthdayText = (c) => {
