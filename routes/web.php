@@ -67,11 +67,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/customers/check', [CustomerController::class, 'check'])
         ->middleware(['can:customers.view', 'throttle:90,1'])->name('customers.check');
     Route::get('/customers/export', [CustomerExchangeController::class, 'export'])
-        ->middleware('can:customers.update')->name('customers.export');
+        ->middleware('role:admin')->name('customers.export');
     Route::get('/customers/template', [CustomerExchangeController::class, 'template'])
-        ->middleware('can:customers.create')->name('customers.template');
+        ->middleware('role:admin')->name('customers.template');
     Route::post('/customers/import', [CustomerExchangeController::class, 'import'])
-        ->middleware(['can:customers.create', 'throttle:10,1'])->name('customers.import');
+        ->middleware(['role:admin', 'throttle:10,1'])->name('customers.import');
     Route::get('/customers', [CustomerController::class, 'index'])->middleware('can:customers.view')->name('customers.index');
     Route::get('/customers/{customer}', [CustomerController::class, 'show'])->middleware('can:customers.view')->name('customers.show');
     Route::post('/customers', [CustomerController::class, 'store'])->middleware('can:customers.create')->name('customers.store');
