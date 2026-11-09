@@ -6,7 +6,6 @@ use App\Models\Category;
 use App\Models\PriceList;
 use App\Models\Product;
 use App\Models\ProductUnit;
-use App\Models\ProductVariant;
 use App\Models\Unit;
 use App\Support\DocumentNumber;
 use Illuminate\Database\Eloquent\Model;
@@ -31,7 +30,7 @@ class ProductController extends Controller
         $category = $request->query('category');
         $status = in_array($request->query('status'), ['active', 'inactive'], true) ? $request->query('status') : null;
 
-        $products = Product::with(['category:id,name', 'variants', 'units.unit:id,name', 'units.prices'])
+        $products = Product::with(['category:id,name', 'units.unit:id,name', 'units.prices'])
             ->search($search)
             ->when($category === 'none', fn ($q) => $q->whereNull('category_id'))
             ->when(is_numeric($category), fn ($q) => $q->where('category_id', (int) $category))
@@ -50,15 +49,9 @@ class ProductController extends Controller
                 'description' => $p->description,
                 'is_active' => $p->is_active,
                 'image_url' => $p->image_url,
-                'variant_label' => $p->variant_label,
-                'variants' => $p->variants->map(fn ($v) => [
-                    'id' => $v->id,
-                    'name' => $v->name,
-                    'code' => $v->code,
-                    'barcode' => $v->barcode,
-                    'is_active' => $v->is_active,
-                    'image_url' => $v->image_url,
-                ])->values(),
+                'cost_price' => $p->cost_price,
+                'track_stock' => $p->track_stock,
+                'opening_stock' => $p->opening_stock,
                 'units' => $p->units->map(fn ($u) => [
                     'id' => $u->id,
                     'unit_id' => $u->unit_id,
@@ -76,13 +69,13 @@ class ProductController extends Controller
             'products' => $products,
             'filters' => ['search' => $search, 'category' => $category ?: null, 'status' => $status],
             'categories' => Category::orderBy('name')->get(['id', 'name', 'is_active']),
-            'units' => Unit::orderBy('name')->get(['id', 'name', 'is_active']),
+            'units' => Unit::orderBy('name')->get(['id', 'name', 'kind', 'is_default', 'is_active']),
             'priceLists' => PriceList::orderByDesc('is_default')->orderBy('name')->get(['id', 'name', 'is_default', 'is_active']),
         ]);
     }
 
     /**
-     * Kiểm tra trùng mã sản phẩm / mã vạch ngay khi nhập (có tính cả mã của biến thể).
+     * Kiểm tra trùng mã sản phẩm / mã vạch ngay khi nhập .
      * Cùng định dạng trả về với users.check để dùng chung composable useUniqueCheck.
      */
     public function check(Request $request): JsonResponse
@@ -104,11 +97,6 @@ class ProductController extends Controller
             ->when($ignore, fn ($q) => $q->whereKeyNot($ignore))
             ->first(['id', 'name'])?->name;
 
-        $found ??= ProductVariant::where($field, $value)
-            ->when($ignore, fn ($q) => $q->where('product_id', '!=', $ignore))
-            ->with('product:id,name')
-            ->first()?->product?->name;
-
         $label = $field === 'code' ? 'Mã này' : 'Mã vạch này';
 
         return response()->json([
@@ -129,7 +117,6 @@ class ProductController extends Controller
             $product->save();
 
             $this->syncUnits($product, $data['units']);
-            $this->syncVariants($product, $data['variants']);
         });
 
         return redirect()->route('products.index')->with('success', 'Đã thêm sản phẩm.');
@@ -148,7 +135,6 @@ class ProductController extends Controller
             $product->save();
 
             $this->syncUnits($product, $data['units']);
-            $this->syncVariants($product, $data['variants']);
         });
 
         return redirect()->route('products.index')->with('success', 'Đã cập nhật sản phẩm.');
@@ -156,9 +142,8 @@ class ProductController extends Controller
 
     public function destroy(Product $product): RedirectResponse
     {
-        $product->load(['units', 'variants']);
+        $product->load('units');
         $product->units->each->deleteUploadedImage();
-        $product->variants->each->deleteUploadedImage();
         $product->deleteUploadedImage();
         $product->delete();
 
@@ -168,7 +153,6 @@ class ProductController extends Controller
     private function validated(Request $request, ?Product $product = null): array
     {
         $id = $product?->id;
-        $hasVariants = $request->boolean('has_variants');
         $image = ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'];
 
         $validator = validator($request->all(), [
@@ -181,8 +165,9 @@ class ProductController extends Controller
             'is_active' => ['required', 'boolean'],
             'image_file' => $image,
             'remove_image' => ['nullable', 'boolean'],
-            'has_variants' => ['nullable', 'boolean'],
-            'variant_label' => [$hasVariants ? 'required' : 'nullable', 'string', 'max:50'],
+            'cost_price' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
+            'track_stock' => ['nullable', 'boolean'],
+            'opening_stock' => ['nullable', 'numeric', 'min:0', 'max:999999999'],
 
             'units' => ['required', 'array', 'min:1', 'max:6'],
             'units.*.unit_id' => ['required', 'distinct', Rule::exists('units', 'id')],
@@ -193,14 +178,6 @@ class ProductController extends Controller
             'units.*.prices.*.price_list_id' => ['required', Rule::exists('price_lists', 'id')],
             'units.*.prices.*.price' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
 
-            'variants' => [$hasVariants ? 'required' : 'nullable', 'array', 'max:30'],
-            'variants.*.id' => ['nullable', 'integer'],
-            'variants.*.name' => ['required', 'string', 'max:100', 'distinct:ignore_case'],
-            'variants.*.code' => ['nullable', 'string', 'max:50', 'regex:'.self::CODE_REGEX, 'distinct'],
-            'variants.*.barcode' => ['nullable', 'string', 'max:50', 'regex:'.self::CODE_REGEX, 'distinct'],
-            'variants.*.is_active' => ['nullable', 'boolean'],
-            'variants.*.image_file' => $image,
-            'variants.*.remove_image' => ['nullable', 'boolean'],
         ], [
             'code.regex' => 'Mã sản phẩm chỉ gồm chữ, số, dấu chấm, gạch dưới hoặc gạch ngang.',
             'code.unique' => 'Mã sản phẩm này đã tồn tại.',
@@ -213,16 +190,13 @@ class ProductController extends Controller
             'category_id.exists' => 'Danh mục không tồn tại.',
             'tax_rate.required' => 'Vui lòng chọn mức thuế.',
             'tax_rate.between' => 'Mức thuế phải từ 0 đến 100%.',
-            'variant_label.required' => 'Vui lòng nhập tên thuộc tính (ví dụ: Màu sắc).',
+            'cost_price.numeric' => 'Giá vốn phải là số.',
+            'cost_price.min' => 'Giá vốn không được âm.',
+            'opening_stock.numeric' => 'Tồn kho ban đầu phải là số.',
+            'opening_stock.min' => 'Tồn kho ban đầu không được âm.',
             'units.*.image_file.image' => 'Tệp phải là ảnh.',
             'units.*.image_file.mimes' => 'Ảnh chỉ nhận định dạng JPG, PNG hoặc WebP.',
             'units.*.image_file.max' => 'Ảnh tối đa 2 MB.',
-            'variants.*.image_file.image' => 'Tệp phải là ảnh.',
-            'variants.*.image_file.mimes' => 'Ảnh chỉ nhận định dạng JPG, PNG hoặc WebP.',
-            'variants.*.image_file.max' => 'Ảnh tối đa 2 MB.',
-            'image_file.image' => 'Tệp phải là ảnh.',
-            'image_file.mimes' => 'Ảnh chỉ nhận định dạng JPG, PNG hoặc WebP.',
-            'image_file.max' => 'Ảnh tối đa 2 MB.',
             'units.required' => 'Cần ít nhất một đơn vị tính.',
             'units.min' => 'Cần ít nhất một đơn vị tính.',
             'units.max' => 'Tối đa 6 đơn vị tính cho một sản phẩm.',
@@ -234,18 +208,9 @@ class ProductController extends Controller
             'units.*.factor.min' => 'Số lượng quy đổi tối thiểu là 1.',
             'units.*.prices.*.price.numeric' => 'Giá phải là số.',
             'units.*.prices.*.price.min' => 'Giá không được âm.',
-            'variants.required' => 'Cần ít nhất một biến thể.',
-            'variants.max' => 'Tối đa 30 biến thể cho một sản phẩm.',
-            'variants.*.name.required' => 'Vui lòng nhập tên biến thể.',
-            'variants.*.name.max' => 'Tên biến thể tối đa 100 ký tự.',
-            'variants.*.name.distinct' => 'Tên biến thể bị trùng.',
-            'variants.*.code.regex' => 'Mã chỉ gồm chữ, số, dấu chấm, gạch dưới hoặc gạch ngang.',
-            'variants.*.code.distinct' => 'Mã biến thể bị trùng.',
-            'variants.*.barcode.regex' => 'Mã vạch chỉ gồm chữ, số, dấu chấm, gạch dưới hoặc gạch ngang.',
-            'variants.*.barcode.distinct' => 'Mã vạch biến thể bị trùng.',
         ]);
 
-        $validator->after(function (Validator $v) use ($request, $id, $hasVariants) {
+        $validator->after(function (Validator $v) use ($request, $id) {
             $units = array_values((array) $request->input('units', []));
 
             // Phải có đúng một đơn vị cơ bản (quy đổi = 1)
@@ -264,38 +229,25 @@ class ProductController extends Controller
                 }
             }
 
-            // Mã / mã vạch của sản phẩm không được trùng với mã của biến thể thuộc sản phẩm khác
-            foreach (['code' => 'Mã sản phẩm này đã được dùng cho một biến thể.', 'barcode' => 'Mã vạch này đã được dùng cho một biến thể.'] as $field => $msg) {
-                $value = trim((string) $request->input($field, ''));
-                if ($value !== '' && ! $v->errors()->has($field)
-                    && ProductVariant::where($field, $value)->when($id, fn ($q) => $q->where('product_id', '!=', $id))->exists()) {
-                    $v->errors()->add($field, $msg);
+            // Đơn vị cơ bản phải thuộc loại "cơ bản", đơn vị quy đổi thuộc loại "quy đổi" và quy đổi > 1
+            $kinds = Unit::whereIn('id', collect($units)->pluck('unit_id')->filter()->all())->pluck('kind', 'id');
+            foreach ($units as $i => $row) {
+                $kind = $kinds[(int) ($row['unit_id'] ?? 0)] ?? null;
+                if ($kind === null || $v->errors()->has("units.{$i}.unit_id")) {
+                    continue;
+                }
+                $isBase = (int) ($row['factor'] ?? 0) === 1;
+                if ($isBase && $kind !== Unit::BASE) {
+                    $v->errors()->add("units.{$i}.unit_id", 'Hãy chọn một đơn vị thuộc loại "Đơn vị cơ bản".');
+                } elseif (! $isBase && $kind !== Unit::CONVERSION) {
+                    $v->errors()->add("units.{$i}.unit_id", 'Hãy chọn một đơn vị thuộc loại "Đơn vị quy đổi".');
                 }
             }
 
-            // Mã / mã vạch của biến thể không được trùng với sản phẩm khác (kể cả mã sản phẩm)
-            if ($hasVariants) {
-                foreach (array_values((array) $request->input('variants', [])) as $n => $row) {
-                    $vid = isset($row['id']) ? (int) $row['id'] : null;
-                    foreach (['code', 'barcode'] as $field) {
-                        $value = trim((string) ($row[$field] ?? ''));
-                        if ($value === '' || $v->errors()->has("variants.{$n}.{$field}")) {
-                            continue;
-                        }
-                        $clash = ProductVariant::where($field, $value)->when($vid, fn ($q) => $q->whereKeyNot($vid))->exists()
-                            || Product::where($field, $value)->exists();
-                        if ($clash) {
-                            $v->errors()->add("variants.{$n}.{$field}", $field === 'code' ? 'Mã này đã được dùng.' : 'Mã vạch này đã được dùng.');
-                        }
-                    }
-                }
-            }
         });
 
         $data = $validator->validate();
 
-        $data['has_variants'] = $hasVariants;
-        $data['variants'] = $hasVariants ? array_values($data['variants'] ?? []) : [];
         $data['units'] = array_values($data['units']);
 
         return $data;
@@ -305,11 +257,12 @@ class ProductController extends Controller
     {
         return [
             'name' => $data['name'],
-            // Có biến thể thì mã vạch nằm ở từng biến thể
-            'barcode' => $data['has_variants'] ? null : ($data['barcode'] ?? null),
-            'variant_label' => $data['has_variants'] ? $data['variant_label'] : null,
+            'barcode' => $data['barcode'] ?? null,
             'category_id' => $data['category_id'],
             'tax_rate' => $data['tax_rate'],
+            'cost_price' => $data['cost_price'] ?? 0, // chưa biết giá vốn thì để 0
+            'track_stock' => $track = (bool) ($data['track_stock'] ?? false),
+            'opening_stock' => $track ? ($data['opening_stock'] ?? 0) : 0,
             'description' => $data['description'] ?? null,
             'is_active' => (bool) $data['is_active'],
         ];
@@ -346,33 +299,6 @@ class ProductController extends Controller
         });
     }
 
-    /** Đồng bộ theo id để product_variants.id ổn định cho các module tồn kho / bán hàng sau này. */
-    private function syncVariants(Product $product, array $variants): void
-    {
-        $existing = $product->variants()->get()->keyBy('id');
-        $keep = [];
-
-        foreach ($variants as $n => $row) {
-            $id = isset($row['id']) ? (int) $row['id'] : 0;
-            /** @var ProductVariant $variant */
-            $variant = $existing->get($id) ?? $product->variants()->make();
-
-            $variant->name = trim($row['name']);
-            $variant->barcode = $row['barcode'] ?? null;
-            $variant->is_active = filter_var($row['is_active'] ?? true, FILTER_VALIDATE_BOOLEAN);
-            $variant->sort_order = $n;
-            $variant->code = ($row['code'] ?? null) ?: ($variant->code ?: $this->nextVariantCode($product));
-            $variant->fill($this->imageAttrs($variant, $row));
-            $variant->save();
-            $keep[] = $variant->id;
-        }
-
-        $product->variants()->whereNotIn('id', $keep)->get()->each(function (ProductVariant $v) {
-            $v->deleteUploadedImage();
-            $v->delete();
-        });
-    }
-
     /** Ảnh tải lên > xóa ảnh > giữ nguyên. Trả về thuộc tính `image` cần cập nhật (rỗng nếu giữ nguyên). */
     private function imageAttrs(?Model $model, array $row): array
     {
@@ -399,17 +325,7 @@ class ProductController extends Controller
     {
         do {
             $code = DocumentNumber::next('product');
-        } while (Product::where('code', $code)->exists() || ProductVariant::where('code', $code)->exists());
-
-        return $code;
-    }
-
-    private function nextVariantCode(Product $product): string
-    {
-        $n = 1;
-        do {
-            $code = $product->code.'-'.str_pad((string) $n++, 2, '0', STR_PAD_LEFT);
-        } while (ProductVariant::where('code', $code)->exists() || Product::where('code', $code)->exists());
+        } while (Product::where('code', $code)->exists());
 
         return $code;
     }

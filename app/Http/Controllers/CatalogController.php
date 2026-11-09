@@ -57,6 +57,9 @@ class CatalogController extends Controller
         if ($type === 'price-lists' && $item->is_default) {
             $data['is_default'] = true; // muốn đổi mặc định thì chọn bảng giá khác làm mặc định
         }
+        if ($type === 'units' && $data['kind'] !== $item->kind && $item->productUnits()->exists()) {
+            return back()->withErrors(['kind' => 'Đơn vị đang được sản phẩm sử dụng nên không thể đổi loại.']);
+        }
 
         $item->fill($data)->save();
         $this->afterSave($item, $type);
@@ -105,13 +108,26 @@ class CatalogController extends Controller
         if ($type === 'price-lists') {
             $rules['is_default'] = ['required', 'boolean'];
         }
+        if ($type === 'units') {
+            $rules['kind'] = ['required', Rule::in([Unit::BASE, Unit::CONVERSION])];
+            $rules['is_default'] = ['required', 'boolean'];
+            $messages['kind.required'] = 'Vui lòng chọn loại đơn vị.';
+            $messages['kind.in'] = 'Loại đơn vị không hợp lệ.';
+        }
 
         return $request->validate($rules, $messages);
     }
 
-    /** Chỉ một bảng giá được là mặc định. */
+    /** Chỉ một bảng giá được là mặc định; đơn vị thì mỗi loại (cơ bản / quy đổi) có một mặc định. */
     private function afterSave(Model $item, string $type): void
     {
+        if ($type === 'units' && $item->is_default) {
+            Unit::where('kind', $item->kind)->whereKeyNot($item->id)->update(['is_default' => false]);
+            if (! $item->is_active) {
+                $item->update(['is_active' => true]);
+            }
+        }
+
         if ($type === 'price-lists' && $item->is_default) {
             PriceList::whereKeyNot($item->id)->update(['is_default' => false]);
             if (! $item->is_active) {

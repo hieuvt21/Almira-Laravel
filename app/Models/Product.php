@@ -9,14 +9,20 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['code', 'name', 'barcode', 'variant_label', 'category_id', 'tax_rate', 'image', 'description', 'is_active'])]
+#[Fillable(['code', 'name', 'barcode', 'category_id', 'tax_rate', 'cost_price', 'track_stock', 'opening_stock', 'image', 'description', 'is_active'])]
 class Product extends Model
 {
     use HasUploadedImage;
 
     protected function casts(): array
     {
-        return ['is_active' => 'boolean', 'tax_rate' => 'float'];
+        return [
+            'is_active' => 'boolean',
+            'track_stock' => 'boolean',
+            'tax_rate' => 'float',
+            'cost_price' => 'float',
+            'opening_stock' => 'float',
+        ];
     }
 
     /** Tìm theo tên, mã hoặc mã vạch. */
@@ -29,21 +35,12 @@ class Product extends Model
             : $query->where(fn ($w) => $w
                 ->where('name', 'like', "%{$search}%")
                 ->orWhere('code', 'like', "%{$search}%")
-                ->orWhere('barcode', 'like', "%{$search}%")
-                ->orWhereHas('variants', fn ($v) => $v
-                    ->where('name', 'like', "%{$search}%")
-                    ->orWhere('code', 'like', "%{$search}%")
-                    ->orWhere('barcode', 'like', "%{$search}%")));
+                ->orWhere('barcode', 'like', "%{$search}%"));
     }
 
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
-    }
-
-    public function variants(): HasMany
-    {
-        return $this->hasMany(ProductVariant::class)->orderBy('sort_order')->orderBy('id');
     }
 
     public function units(): HasMany

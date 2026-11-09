@@ -6,6 +6,7 @@ import Checkbox from 'primevue/checkbox';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
 import InputText from 'primevue/inputtext';
+import Select from 'primevue/select';
 import Tag from 'primevue/tag';
 import { useConfirm } from 'primevue/useconfirm';
 import AppDialog from '@/Components/AppDialog.vue';
@@ -25,10 +26,18 @@ const confirm = useConfirm();
 const dialog = ref(false);
 const editing = ref(null);
 
-const form = useForm({ name: '', description: '', is_default: false, is_active: true });
+const form = useForm({ name: '', description: '', kind: 'base', is_default: false, is_active: true });
+
+const isUnit = computed(() => props.type === 'units');
+const kindOptions = [
+    { value: 'base', label: 'Đơn vị cơ bản' },
+    { value: 'conversion', label: 'Đơn vị quy đổi' },
+];
+const kindLabel = (k) => kindOptions.find((o) => o.value === k)?.label ?? '';
 
 const isCategory = computed(() => props.type === 'categories');
 const isPriceList = computed(() => props.type === 'price-lists');
+const hasDefault = computed(() => isPriceList.value || isUnit.value);
 
 function openCreate() {
     editing.value = null;
@@ -42,6 +51,7 @@ function openEdit(item) {
     form.clearErrors();
     form.name = item.name;
     form.description = item.description ?? '';
+    form.kind = item.kind ?? 'base';
     form.is_default = !!item.is_default;
     form.is_active = !!item.is_active;
     dialog.value = true;
@@ -98,6 +108,9 @@ function remove(item) {
         <Column v-if="isCategory" field="description" header="Mô tả">
             <template #body="{ data }">{{ data.description || '—' }}</template>
         </Column>
+        <Column v-if="isUnit" header="Loại" style="width: 11rem">
+            <template #body="{ data }">{{ kindLabel(data.kind) }}</template>
+        </Column>
         <Column :header="countLabel" style="width: 9rem">
             <template #body="{ data }">{{ data[countField] }}</template>
         </Column>
@@ -119,7 +132,7 @@ function remove(item) {
                         @click="openEdit(data)"
                     />
                     <Button
-                        v-if="can('products.delete') && !data.is_default"
+                        v-if="can('products.delete') && !(isPriceList && data.is_default)"
                         icon="pi pi-trash"
                         text
                         rounded
@@ -151,9 +164,24 @@ function remove(item) {
                 <small v-if="form.errors.description" class="field-error">{{ form.errors.description }}</small>
             </div>
 
-            <div v-if="isPriceList" class="field" style="flex-direction: row; align-items: center; gap: 0.5rem">
+            <div v-if="isUnit" class="field">
+                <label for="c-kind">Loại đơn vị<span class="al-req" aria-hidden="true">*</span></label>
+                <Select
+                    v-model="form.kind"
+                    inputId="c-kind"
+                    :options="kindOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    fluid
+                    :invalid="!!form.errors.kind"
+                />
+                <small v-if="form.errors.kind" class="field-error">{{ form.errors.kind }}</small>
+                <small v-else class="field-hint">Đơn vị cơ bản: cái, kg, lon... Đơn vị quy đổi: thùng, lố, hộp... (bằng nhiều đơn vị cơ bản).</small>
+            </div>
+
+            <div v-if="hasDefault" class="field" style="flex-direction: row; align-items: center; gap: 0.5rem">
                 <Checkbox v-model="form.is_default" inputId="c-default" binary :disabled="editing?.is_default" />
-                <label for="c-default">Dùng làm bảng giá mặc định</label>
+                <label for="c-default">{{ isUnit ? 'Dùng làm mặc định cho loại này' : 'Dùng làm bảng giá mặc định' }}</label>
             </div>
 
             <div class="field" style="flex-direction: row; align-items: center; gap: 0.5rem">
