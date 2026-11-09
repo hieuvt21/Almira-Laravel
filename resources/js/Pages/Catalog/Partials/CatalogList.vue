@@ -140,13 +140,13 @@ function remove(item) {
     >
         <form @submit.prevent="submit" novalidate>
             <div class="field">
-                <label for="c-name">Tên</label>
+                <label for="c-name">Tên<span class="al-req" aria-hidden="true">*</span></label>
                 <InputText id="c-name" v-model="form.name" autocomplete="off" fluid :invalid="!!form.errors.name" />
                 <small v-if="form.errors.name" class="field-error">{{ form.errors.name }}</small>
             </div>
 
             <div v-if="isCategory" class="field">
-                <label for="c-desc">Mô tả <span class="field-hint">(không bắt buộc)</span></label>
+                <label for="c-desc">Mô tả</label>
                 <InputText id="c-desc" v-model="form.description" autocomplete="off" fluid :invalid="!!form.errors.description" />
                 <small v-if="form.errors.description" class="field-error">{{ form.errors.description }}</small>
             </div>

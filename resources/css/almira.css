@@ -293,3 +293,6 @@ body { background: transparent; color: var(--al-text); }
 .rate-chip button:disabled { opacity: 0.4; cursor: not-allowed; }
 .rate-chip button:focus-visible { outline: 2px solid var(--al-primary); }
 .rate-add { display: flex; gap: 0.5rem; align-items: center; }
+
+/* Dấu sao đỏ cho ô bắt buộc */
+.al-req { color: #dc2626; margin-left: 0.15rem; font-weight: 600; }
