@@ -195,6 +195,7 @@ class ProductController extends Controller
             $prices = array_values((array) $request->input('prices', []));
             $defaultId = (int) PriceList::where('is_default', true)->value('id');
             $hasTier = false;
+            $seenQty = [];
 
             foreach ($prices as $i => $row) {
                 $price = $row['price'] ?? null;
@@ -209,24 +210,29 @@ class ProductController extends Controller
                     continue;
                 }
 
+                // Các bảng giá khác luôn nhập được giá (chọn thủ công khi bán). Số lượng chỉ dùng khi bật tự động chuyển giá.
                 if (! $qtyPricing) {
                     continue;
                 }
 
-                // Giá theo số lượng: đã nhập giá thì phải có số lượng tối thiểu, và ngược lại
                 $minQty = $row['min_qty'] ?? null;
-                $hasQty = $minQty !== null && $minQty !== '';
-                if ($filled && ! $hasQty) {
-                    $v->errors()->add("prices.{$i}.min_qty", 'Nhập số lượng tối thiểu.');
-                }
+                $hasQty = $minQty !== null && $minQty !== '' && is_numeric($minQty);
                 if ($hasQty && ! $filled) {
                     $v->errors()->add("prices.{$i}.price", 'Nhập giá.');
                 }
-                $hasTier = $hasTier || ($filled && $hasQty);
+                if ($hasQty && $filled) {
+                    $hasTier = true;
+                    // Mỗi bảng giá một mức số lượng riêng, nếu không sẽ không biết áp dụng giá nào
+                    $key = rtrim(rtrim(number_format((float) $minQty, 3, '.', ''), '0'), '.');
+                    if (isset($seenQty[$key])) {
+                        $v->errors()->add("prices.{$i}.min_qty", 'Số lượng này đã dùng cho một bảng giá khác. Mỗi bảng giá cần một mức số lượng riêng.');
+                    }
+                    $seenQty[$key] = true;
+                }
             }
 
             if ($qtyPricing && ! $hasTier && ! $v->errors()->has('prices')) {
-                $v->errors()->add('qty_pricing', 'Hãy khai báo ít nhất một mức giá theo số lượng, hoặc tắt "Giá theo số lượng".');
+                $v->errors()->add('qty_pricing', 'Hãy nhập số lượng cho ít nhất một bảng giá, hoặc tắt "Tự động chuyển giá theo số lượng".');
             }
         });
 
@@ -255,8 +261,9 @@ class ProductController extends Controller
     }
 
     /**
-     * Giá bán lẻ luôn được lưu. Các bảng giá khác (giá theo số lượng) chỉ được cập nhật khi bật
-     * "Giá theo số lượng"; khi tắt thì giữ nguyên dữ liệu cũ nhưng không áp dụng.
+     * Mỗi bảng giá có giá riêng (nhập được dù có bật tự động chuyển giá hay không).
+     * Số lượng tối thiểu (`min_qty`) chỉ được cập nhật khi bật "Tự động chuyển giá theo số lượng";
+     * khi tắt thì giữ nguyên số lượng cũ nhưng không áp dụng. Bảng giá để trống giá thì bị xóa.
      */
     private function syncPrices(Product $product, array $data): void
     {
@@ -267,22 +274,21 @@ class ProductController extends Controller
             $listId = (int) $row['price_list_id'];
             $isDefault = $listId === $defaultId;
             $price = $row['price'] ?? null;
-            $hasPrice = $price !== null && $price !== '';
 
-            if (! $isDefault && ! $qtyPricing) {
-                continue;
-            }
-
-            if (! $isDefault && ! $hasPrice) {
+            if (! $isDefault && ($price === null || $price === '')) {
                 $product->prices()->where('price_list_id', $listId)->delete();
 
                 continue;
             }
 
-            $product->prices()->updateOrCreate(
-                ['price_list_id' => $listId],
-                ['price' => $price ?? 0, 'min_qty' => $isDefault ? null : ($row['min_qty'] ?? null)],
-            );
+            $attrs = ['price' => $price ?? 0];
+            if ($isDefault) {
+                $attrs['min_qty'] = null;
+            } elseif ($qtyPricing) {
+                $attrs['min_qty'] = ($row['min_qty'] ?? null) === '' ? null : ($row['min_qty'] ?? null);
+            }
+
+            $product->prices()->updateOrCreate(['price_list_id' => $listId], $attrs);
         }
     }
 

@@ -124,6 +124,15 @@ const emptyTiers = () => Object.fromEntries(tierLists.value.map((l) => [l.id, { 
 // Lỗi của dòng giá theo chỉ số trong danh sách gửi lên server (bảng giá mặc định đứng đầu)
 const tierIndex = (listId) => 1 + tierLists.value.findIndex((l) => l.id === listId);
 
+// Mỗi bảng giá một mức số lượng riêng: báo trùng ngay khi nhập
+const dupQty = (listId) => {
+    if (!form.qty_pricing) return false;
+    const q = form.tiers[listId]?.min_qty;
+    if (q === null || q === undefined || q === '') return false;
+    return tierLists.value.some((l) => l.id !== listId && form.tiers[l.id]?.price != null && Number(form.tiers[l.id]?.min_qty) === Number(q) && form.tiers[listId]?.price != null);
+};
+const qtyConflict = computed(() => form.qty_pricing && tierLists.value.some((l) => dupQty(l.id)));
+
 function resetChecks() {
     codeCheck.reset();
     barcodeCheck.reset();
@@ -168,7 +177,7 @@ function openEdit(p) {
 }
 
 function submit() {
-    if (hasConflict.value) return;
+    if (hasConflict.value || qtyConflict.value) return;
 
     form.transform((data) => {
         const payload = {
@@ -183,12 +192,14 @@ function submit() {
             qty_pricing: data.qty_pricing,
             track_stock: data.track_stock,
             opening_stock: data.track_stock ? (data.opening_stock ?? 0) : 0,
-            // Bảng giá mặc định (bán lẻ) đứng đầu; các bảng giá khác chỉ gửi khi bật giá theo số lượng
+            // Bảng giá mặc định (bán lẻ) đứng đầu, sau đó là các bảng giá khác; số lượng chỉ gửi khi bật tự động chuyển giá
             prices: [
                 { price_list_id: defaultList.value?.id, price: data.retail_price },
-                ...(data.qty_pricing
-                    ? tierLists.value.map((l) => ({ price_list_id: l.id, price: data.tiers[l.id]?.price, min_qty: data.tiers[l.id]?.min_qty }))
-                    : []),
+                ...tierLists.value.map((l) => ({
+                    price_list_id: l.id,
+                    price: data.tiers[l.id]?.price,
+                    ...(data.qty_pricing ? { min_qty: data.tiers[l.id]?.min_qty } : {}),
+                })),
             ],
         };
         if (data.image_file) payload.image_file = data.image_file;
@@ -430,24 +441,26 @@ const subline = (p) => [p.code, p.category, p.unit].filter(Boolean).join(' · ')
                         <small v-if="err('prices.0.price')" class="field-error">{{ err('prices.0.price') }}</small>
                     </div>
 
-                    <div class="pr-check">
-                        <Checkbox v-model="form.qty_pricing" inputId="p-qty" binary />
-                        <label for="p-qty">Giá theo số lượng</label>
-                    </div>
-
-                    <div v-if="form.qty_pricing" class="pr-tiers">
-                        <p class="field-hint pr-tiers-note">
-                            Khi bán từ số lượng này trở lên, màn hình bán hàng sẽ hỏi có áp dụng giá tương ứng hay không.
-                        </p>
-
-                        <p v-if="!tierLists.length" class="field-hint">
-                            Chưa có bảng giá nào khác. Hãy thêm (ví dụ "Giá sỉ") trong Danh mục &amp; đơn vị, tab Bảng giá.
-                        </p>
-
-                        <div v-for="l in tierLists" :key="l.id" class="pr-tier">
-                            <span class="pr-tier-name">{{ l.name }}</span>
+                    <!-- Các bảng giá khác: luôn nhập được, chọn thủ công khi bán -->
+                    <div v-if="tierLists.length" class="pr-tiers">
+                        <div v-for="l in tierLists" :key="l.id" class="pr-tier" :class="{ 'pr-tier--qty': form.qty_pricing }">
                             <div class="field">
-                                <label :for="`p-tier-qty-${l.id}`">Từ số lượng ({{ unitName }})</label>
+                                <label :for="`p-tier-price-${l.id}`">{{ l.name }}</label>
+                                <InputNumber
+                                    v-model="form.tiers[l.id].price"
+                                    :inputId="`p-tier-price-${l.id}`"
+                                    :min="0"
+                                    :minFractionDigits="fractionDigits"
+                                    :maxFractionDigits="fractionDigits"
+                                    locale="vi-VN"
+                                    placeholder="Không bán theo giá này"
+                                    fluid
+                                    :invalid="!!err(`prices.${tierIndex(l.id)}.price`)"
+                                />
+                                <small v-if="err(`prices.${tierIndex(l.id)}.price`)" class="field-error">{{ err(`prices.${tierIndex(l.id)}.price`) }}</small>
+                            </div>
+                            <div v-if="form.qty_pricing" class="field">
+                                <label :for="`p-tier-qty-${l.id}`">Tự chuyển từ số lượng ({{ unitName }})</label>
                                 <InputNumber
                                     v-model="form.tiers[l.id].min_qty"
                                     :inputId="`p-tier-qty-${l.id}`"
@@ -456,28 +469,30 @@ const subline = (p) => [p.code, p.category, p.unit].filter(Boolean).join(' · ')
                                     locale="vi-VN"
                                     placeholder="VD: 100"
                                     fluid
-                                    :invalid="!!err(`prices.${tierIndex(l.id)}.min_qty`)"
+                                    :invalid="dupQty(l.id) || !!err(`prices.${tierIndex(l.id)}.min_qty`)"
                                 />
-                                <small v-if="err(`prices.${tierIndex(l.id)}.min_qty`)" class="field-error">{{ err(`prices.${tierIndex(l.id)}.min_qty`) }}</small>
-                            </div>
-                            <div class="field">
-                                <label :for="`p-tier-price-${l.id}`">Giá</label>
-                                <InputNumber
-                                    v-model="form.tiers[l.id].price"
-                                    :inputId="`p-tier-price-${l.id}`"
-                                    :min="0"
-                                    :minFractionDigits="fractionDigits"
-                                    :maxFractionDigits="fractionDigits"
-                                    locale="vi-VN"
-                                    placeholder="0"
-                                    fluid
-                                    :invalid="!!err(`prices.${tierIndex(l.id)}.price`)"
-                                />
-                                <small v-if="err(`prices.${tierIndex(l.id)}.price`)" class="field-error">{{ err(`prices.${tierIndex(l.id)}.price`) }}</small>
+                                <small v-if="dupQty(l.id)" class="field-error">Số lượng này đã dùng cho một bảng giá khác. Mỗi bảng giá cần một mức riêng.</small>
+                                <small v-else-if="err(`prices.${tierIndex(l.id)}.min_qty`)" class="field-error">{{ err(`prices.${tierIndex(l.id)}.min_qty`) }}</small>
                             </div>
                         </div>
-                        <small v-if="err('qty_pricing')" class="field-error">{{ err('qty_pricing') }}</small>
+                        <small class="field-hint pr-hint-block">
+                            Các bảng giá này luôn chọn thủ công được khi bán, kể cả chưa đủ số lượng.
+                        </small>
                     </div>
+                    <p v-else class="field-hint">
+                        Muốn bán nhiều loại giá (ví dụ "Giá sỉ"), hãy thêm bảng giá trong Danh mục &amp; đơn vị, tab Bảng giá.
+                    </p>
+
+                    <template v-if="tierLists.length">
+                        <div class="pr-check pr-auto">
+                            <Checkbox v-model="form.qty_pricing" inputId="p-qty" binary />
+                            <label for="p-qty">Tự động chuyển giá theo số lượng</label>
+                        </div>
+                        <small v-if="form.qty_pricing" class="field-hint pr-hint-block">
+                            Khi số lượng bán từ mức đã nhập trở lên, màn hình bán hàng hỏi có áp dụng giá đó không. Để trống số lượng nếu bảng giá đó chỉ chọn thủ công.
+                        </small>
+                        <small v-if="err('qty_pricing')" class="field-error pr-hint-block">{{ err('qty_pricing') }}</small>
+                    </template>
                 </section>
 
                 <!-- Tồn kho -->
@@ -518,7 +533,7 @@ const subline = (p) => [p.code, p.category, p.unit].filter(Boolean).join(' · ')
 
                 <div class="dialog-actions">
                     <Button type="button" label="Hủy" severity="secondary" outlined @click="dialog = false" />
-                    <Button type="submit" :label="editing ? 'Lưu thay đổi' : 'Thêm sản phẩm'" :loading="form.processing" :disabled="hasConflict" />
+                    <Button type="submit" :label="editing ? 'Lưu thay đổi' : 'Thêm sản phẩm'" :loading="form.processing" :disabled="hasConflict || qtyConflict" />
                 </div>
             </form>
         </AppDialog>
@@ -561,18 +576,18 @@ const subline = (p) => [p.code, p.category, p.unit].filter(Boolean).join(' · ')
 .pr-check { display: flex; align-items: center; gap: 0.5rem; }
 .pr-check label { font-weight: 500; }
 .pr-hint-block { display: block; margin: 0.35rem 0 0; }
-.pr-tiers { margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--al-line); border-radius: 0.6rem; }
-.pr-tiers-note { margin: 0 0 0.75rem; }
-.pr-tier { display: grid; grid-template-columns: 7rem 1fr 1fr; gap: 0 0.75rem; align-items: start; margin-bottom: 0.5rem; }
+.pr-tiers { margin-top: 0.25rem; }
+.pr-tier { display: grid; grid-template-columns: 1fr; gap: 0 0.75rem; margin-bottom: 0.5rem; max-width: 16rem; }
+.pr-tier--qty { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); max-width: none; }
 .pr-tier .field { margin-bottom: 0; }
-.pr-tier-name { padding-top: 1.7rem; font-weight: 500; overflow-wrap: anywhere; }
+.pr-auto { margin-top: 0.75rem; }
 .pr-stock { margin-top: 0.75rem; max-width: 16rem; }
 .pr-tag { margin-left: 0.4rem; }
 
 @media (max-width: 560px) {
     .pr-head { flex-direction: column; }
     .pr-head-name { width: 100%; flex-basis: auto; }
-    .pr-tier { grid-template-columns: 1fr 1fr; }
-    .pr-tier-name { grid-column: 1 / -1; padding-top: 0; }
+    .pr-tier--qty { grid-template-columns: 1fr; gap: 0.5rem; }
+    .pr-tier { max-width: none; }
 }
 </style>
