@@ -76,46 +76,35 @@ const first = computed(() => (props.products.current_page - 1) * props.products.
 /* ---------- Form thêm / sửa ---------- */
 const dialog = ref(false);
 const editing = ref(null);
-const MAX_CONVERSIONS = 5;
 
 const form = useForm({
     code: '',
     name: '',
     barcode: '',
     category_id: null,
+    unit_id: null,
     tax_rate: 0,
     description: '',
     is_active: true,
     image_file: null,
     remove_image: false,
-    base: { unit_id: null, prices: {} }, // đơn vị cơ bản: không có ảnh riêng
-    cost_price: null,
+    retail_price: null, // giá bán lẻ (bảng giá mặc định)
+    qty_pricing: false, // bật "Giá theo số lượng"
+    tiers: {}, // { [price_list_id]: { min_qty, price } } cho các bảng giá khác
     track_stock: false,
     opening_stock: null,
-    conversions: [], // đơn vị quy đổi
 });
 
 const taxOn = computed(() => !!config.value.tax_enabled);
 const taxOptions = computed(() => (config.value.tax_rates ?? []).map((r) => ({ label: `${r}%`, value: Number(r) })));
-const activeLists = computed(() => props.priceLists.filter((l) => l.is_active));
 const defaultList = computed(() => props.priceLists.find((l) => l.is_default));
+const tierLists = computed(() => props.priceLists.filter((l) => l.is_active && !l.is_default));
 const categoryOptions = computed(() => props.categories.filter((c) => c.is_active || c.id === form.category_id));
+const unitOptions = computed(() => props.units.filter((u) => u.is_active || u.id === form.unit_id));
+const defaultUnitId = computed(() => props.units.find((u) => u.is_default && u.is_active)?.id ?? null);
+const unitName = computed(() => props.units.find((u) => u.id === form.unit_id)?.name ?? 'đơn vị tính');
 const fractionDigits = computed(() => Number(config.value.decimals) || 0);
 const err = (key) => form.errors[key];
-
-// Đơn vị cơ bản và đơn vị quy đổi là hai danh sách riêng (loại đặt trong Danh mục & đơn vị)
-const baseUnits = computed(() => props.units.filter((u) => u.kind === 'base'));
-const conversionUnits = computed(() => props.units.filter((u) => u.kind === 'conversion'));
-const defaultBaseId = computed(() => baseUnits.value.find((u) => u.is_default && u.is_active)?.id ?? null);
-const defaultConversionId = computed(() => conversionUnits.value.find((u) => u.is_default && u.is_active)?.id ?? null);
-
-const baseOptions = computed(() => baseUnits.value.filter((u) => u.is_active || u.id === form.base.unit_id));
-const baseName = computed(() => props.units.find((u) => u.id === form.base.unit_id)?.name ?? 'đơn vị cơ bản');
-
-function conversionOptions(index) {
-    const used = form.conversions.filter((_, i) => i !== index).map((c) => c.unit_id);
-    return conversionUnits.value.filter((u) => !used.includes(u.id) && (u.is_active || u.id === form.conversions[index].unit_id));
-}
 
 // Kiểm tra trùng mã / mã vạch ngay khi nhập (khi sửa: bỏ qua chính sản phẩm đang sửa)
 const checkOptions = (key) => ({
@@ -128,18 +117,12 @@ const barcodeCheck = useUniqueCheck('barcode', () => form.barcode, checkOptions(
 const hasConflict = computed(() => [codeCheck, barcodeCheck].some((c) => ['taken', 'invalid'].includes(c.status)));
 
 // Xóa lỗi cũ của ô vừa sửa
-['code', 'name', 'barcode', 'tax_rate', 'category_id'].forEach((f) => watch(() => form[f], () => form.clearErrors(f)));
+['code', 'name', 'barcode', 'tax_rate', 'category_id', 'unit_id'].forEach((f) => watch(() => form[f], () => form.clearErrors(f)));
 
-const emptyPrices = () => Object.fromEntries(activeLists.value.map((l) => [l.id, null]));
+const emptyTiers = () => Object.fromEntries(tierLists.value.map((l) => [l.id, { min_qty: null, price: null }]));
 
-function blankConversion() {
-    const used = form.conversions.map((c) => c.unit_id);
-    const preset = defaultConversionId.value && !used.includes(defaultConversionId.value) ? defaultConversionId.value : null;
-    return { unit_id: preset, factor: null, prices: emptyPrices(), image_file: null, remove_image: false, image_url: null };
-}
-
-const addConversion = () => form.conversions.length < MAX_CONVERSIONS && form.conversions.push(blankConversion());
-const removeConversion = (i) => form.conversions.splice(i, 1);
+// Lỗi của dòng giá theo chỉ số trong danh sách gửi lên server (bảng giá mặc định đứng đầu)
+const tierIndex = (listId) => 1 + tierLists.value.findIndex((l) => l.id === listId);
 
 function resetChecks() {
     codeCheck.reset();
@@ -152,8 +135,8 @@ function openCreate() {
     form.reset();
     form.clearErrors();
     form.tax_rate = taxOn.value ? Number(config.value.tax_default_rate) : 0;
-    form.base = { unit_id: defaultBaseId.value, prices: emptyPrices() };
-    form.conversions = [];
+    form.unit_id = defaultUnitId.value;
+    form.tiers = emptyTiers();
     dialog.value = true;
 }
 
@@ -165,65 +148,51 @@ function openEdit(p) {
     form.name = p.name;
     form.barcode = p.barcode ?? '';
     form.category_id = p.category_id;
+    form.unit_id = p.unit_id;
     form.tax_rate = Number(p.tax_rate);
     form.description = p.description ?? '';
     form.is_active = p.is_active;
     form.image_file = null;
     form.remove_image = false;
-    form.cost_price = Number(p.cost_price) || null;
+    form.qty_pricing = p.qty_pricing;
     form.track_stock = p.track_stock;
     form.opening_stock = p.track_stock ? Number(p.opening_stock) : null;
 
-    const [base, ...rest] = p.units; // đã sắp theo số lượng quy đổi: đơn vị cơ bản đứng đầu
-    const toPrices = (u) => {
-        const prices = emptyPrices();
-        u.prices.forEach((pr) => (prices[pr.price_list_id] = pr.price));
-        return prices;
-    };
-    form.base = { unit_id: base?.unit_id ?? null, prices: base ? toPrices(base) : emptyPrices() };
-    form.conversions = rest.map((u) => ({
-        unit_id: u.unit_id,
-        factor: u.factor,
-        prices: toPrices(u),
-        image_file: null,
-        remove_image: false,
-        image_url: u.image_url,
-    }));
+    form.retail_price = p.prices.find((x) => x.price_list_id === defaultList.value?.id)?.price ?? null;
+    const tiers = emptyTiers();
+    p.prices.forEach((x) => {
+        if (tiers[x.price_list_id]) tiers[x.price_list_id] = { min_qty: x.min_qty, price: x.price };
+    });
+    form.tiers = tiers;
     dialog.value = true;
 }
-
-// Chỉ gửi trường ảnh khi có thay đổi (tránh gửi chuỗi rỗng)
-const withImage = (row, out) => {
-    if (row.image_file) out.image_file = row.image_file;
-    if (row.remove_image) out.remove_image = true;
-    return out;
-};
-
-const priceList = (prices) => activeLists.value.map((l) => ({ price_list_id: l.id, price: prices[l.id] }));
 
 function submit() {
     if (hasConflict.value) return;
 
     form.transform((data) => {
-        const payload = withImage(data, {
+        const payload = {
             code: data.code,
             name: data.name,
             barcode: data.barcode,
             category_id: data.category_id,
+            unit_id: data.unit_id,
             tax_rate: data.tax_rate,
             description: data.description,
             is_active: data.is_active,
-            cost_price: data.cost_price ?? 0,
+            qty_pricing: data.qty_pricing,
             track_stock: data.track_stock,
             opening_stock: data.track_stock ? (data.opening_stock ?? 0) : 0,
-            // Máy chủ nhận một danh sách đơn vị: đơn vị cơ bản (quy đổi = 1) đứng đầu
-            units: [
-                { unit_id: data.base.unit_id, factor: 1, prices: priceList(data.base.prices) },
-                ...data.conversions.map((c) =>
-                    withImage(c, { unit_id: c.unit_id, factor: c.factor, prices: priceList(c.prices) }),
-                ),
+            // Bảng giá mặc định (bán lẻ) đứng đầu; các bảng giá khác chỉ gửi khi bật giá theo số lượng
+            prices: [
+                { price_list_id: defaultList.value?.id, price: data.retail_price },
+                ...(data.qty_pricing
+                    ? tierLists.value.map((l) => ({ price_list_id: l.id, price: data.tiers[l.id]?.price, min_qty: data.tiers[l.id]?.min_qty }))
+                    : []),
             ],
-        });
+        };
+        if (data.image_file) payload.image_file = data.image_file;
+        if (data.remove_image) payload.remove_image = true;
         return editing.value ? { ...payload, _method: 'put' } : payload;
     });
 
@@ -257,15 +226,9 @@ function remove(p) {
 }
 
 /* ---------- Hiển thị bảng ---------- */
-// Giá ở bảng giá mặc định của đơn vị cơ bản
-function basePrice(p) {
-    const base = p.units[0];
-    if (!base || !defaultList.value) return null;
-    return base.prices.find((x) => x.price_list_id === defaultList.value.id)?.price ?? 0;
-}
-
-const unitSummary = (p) => p.units.map((u) => (u.factor === 1 ? u.unit : `${u.unit} (${u.factor})`)).join(', ');
-const subline = (p) => [p.code, p.category, unitSummary(p)].filter(Boolean).join(' · ');
+// Giá bán lẻ = giá ở bảng giá mặc định
+const retailPrice = (p) => (defaultList.value ? p.prices.find((x) => x.price_list_id === defaultList.value.id)?.price ?? null : null);
+const subline = (p) => [p.code, p.category, p.unit].filter(Boolean).join(' · ');
 </script>
 
 <template>
@@ -328,13 +291,14 @@ const subline = (p) => [p.code, p.category, unitSummary(p)].filter(Boolean).join
                 <Column field="category" header="Danh mục" headerClass="pr-hide-md" bodyClass="pr-hide-md">
                     <template #body="{ data }">{{ data.category || '—' }}</template>
                 </Column>
-                <Column header="Đơn vị" headerClass="pr-hide-md" bodyClass="pr-hide-md">
-                    <template #body="{ data }">{{ unitSummary(data) }}</template>
+                <Column field="unit" header="Đơn vị" headerClass="pr-hide-md" bodyClass="pr-hide-md">
+                    <template #body="{ data }">{{ data.unit || '—' }}</template>
                 </Column>
                 <Column header="Giá bán" headerClass="pr-col-right" bodyClass="pr-col-right">
                     <template #body="{ data }">
-                        <span v-if="basePrice(data) !== null">{{ money(basePrice(data)) }}</span>
+                        <span v-if="retailPrice(data) !== null">{{ money(retailPrice(data)) }}</span>
                         <span v-else>—</span>
+                        <Tag v-if="data.qty_pricing" value="Giá theo SL" severity="info" class="pr-tag" />
                     </template>
                 </Column>
                 <Column header="Trạng thái" headerClass="pr-hide-sm" bodyClass="pr-hide-sm" style="width: 8rem">
@@ -356,7 +320,7 @@ const subline = (p) => [p.code, p.category, unitSummary(p)].filter(Boolean).join
         <AppDialog
             v-model:visible="dialog"
             :header="editing ? 'Sửa sản phẩm' : 'Thêm sản phẩm'"
-            :style="{ width: '46rem' }"
+            :style="{ width: '42rem' }"
             :breakpoints="{ '900px': '96vw' }"
         >
             <form @submit.prevent="submit" novalidate>
@@ -393,10 +357,20 @@ const subline = (p) => [p.code, p.category, unitSummary(p)].filter(Boolean).join
                         />
                         <small v-if="err('category_id')" class="field-error">{{ err('category_id') }}</small>
                     </div>
-                    <div v-if="taxOn" class="field">
-                        <label for="p-tax">Thuế</label>
-                        <Select v-model="form.tax_rate" inputId="p-tax" :options="taxOptions" optionLabel="label" optionValue="value" fluid :invalid="!!err('tax_rate')" />
-                        <small v-if="err('tax_rate')" class="field-error">{{ err('tax_rate') }}</small>
+                    <div class="field">
+                        <label for="p-unit">Đơn vị tính<span class="al-req" aria-hidden="true">*</span></label>
+                        <Select
+                            v-model="form.unit_id"
+                            inputId="p-unit"
+                            :options="unitOptions"
+                            optionLabel="name"
+                            optionValue="id"
+                            placeholder="Chọn đơn vị"
+                            aria-required="true"
+                            fluid
+                            :invalid="!!err('unit_id')"
+                        />
+                        <small v-if="err('unit_id')" class="field-error">{{ err('unit_id') }}</small>
                     </div>
                     <div class="field">
                         <label for="p-code">Mã sản phẩm</label>
@@ -428,155 +402,81 @@ const subline = (p) => [p.code, p.category, unitSummary(p)].filter(Boolean).join
                         <small v-if="err('barcode')" class="field-error">{{ err('barcode') }}</small>
                         <FieldStatus v-else :status="barcodeCheck.status" :message="barcodeCheck.message" />
                     </div>
+                    <div v-if="taxOn" class="field">
+                        <label for="p-tax">Thuế</label>
+                        <Select v-model="form.tax_rate" inputId="p-tax" :options="taxOptions" optionLabel="label" optionValue="value" fluid :invalid="!!err('tax_rate')" />
+                        <small v-if="err('tax_rate')" class="field-error">{{ err('tax_rate') }}</small>
+                    </div>
                 </div>
 
-                <!-- Đơn vị cơ bản, giá bán, giá vốn -->
-                <section class="pr-section" aria-labelledby="p-base-title">
-                    <h3 id="p-base-title" class="pr-section-title">Đơn vị cơ bản và giá</h3>
+                <!-- Giá bán -->
+                <section class="pr-section" aria-labelledby="p-price-title">
+                    <h3 id="p-price-title" class="pr-section-title">Giá bán</h3>
 
-                    <div class="field">
-                        <label for="p-base-unit">Đơn vị cơ bản<span class="al-req" aria-hidden="true">*</span></label>
-                        <Select
-                            v-model="form.base.unit_id"
-                            inputId="p-base-unit"
-                            :options="baseOptions"
-                            optionLabel="name"
-                            optionValue="id"
-                            placeholder="Chọn đơn vị cơ bản"
+                    <div class="field pr-retail">
+                        <label for="p-retail">{{ defaultList?.name ?? 'Giá bán lẻ' }}<span class="al-req" aria-hidden="true">*</span></label>
+                        <InputNumber
+                            v-model="form.retail_price"
+                            inputId="p-retail"
+                            :min="0"
+                            :minFractionDigits="fractionDigits"
+                            :maxFractionDigits="fractionDigits"
+                            locale="vi-VN"
+                            placeholder="0"
                             aria-required="true"
                             fluid
-                            :invalid="!!err('units.0.unit_id')"
+                            :invalid="!!err('prices.0.price')"
                         />
-                        <small v-if="err('units.0.unit_id')" class="field-error">{{ err('units.0.unit_id') }}</small>
-                        <small v-else-if="!baseUnits.length" class="field-hint">Chưa có đơn vị cơ bản, hãy thêm trong Danh mục &amp; đơn vị.</small>
+                        <small v-if="err('prices.0.price')" class="field-error">{{ err('prices.0.price') }}</small>
                     </div>
 
-                    <div class="pr-prices">
-                        <div v-for="l in activeLists" :key="l.id" class="field pr-price">
-                            <label :for="`p-base-price-${l.id}`">
-                                {{ l.name }}<span v-if="l.is_default" class="al-req" aria-hidden="true">*</span>
-                            </label>
-                            <InputNumber
-                                v-model="form.base.prices[l.id]"
-                                :inputId="`p-base-price-${l.id}`"
-                                :min="0"
-                                :minFractionDigits="fractionDigits"
-                                :maxFractionDigits="fractionDigits"
-                                locale="vi-VN"
-                                placeholder="0"
-                                :aria-required="l.is_default ? 'true' : undefined"
-                                fluid
-                                :invalid="l.is_default && !!err('units.0.retail_price')"
-                            />
-                            <small v-if="l.is_default && err('units.0.retail_price')" class="field-error">{{ err('units.0.retail_price') }}</small>
-                        </div>
-                        <div class="field pr-price">
-                            <label for="p-cost">Giá vốn</label>
-                            <InputNumber
-                                v-model="form.cost_price"
-                                inputId="p-cost"
-                                :min="0"
-                                :minFractionDigits="fractionDigits"
-                                :maxFractionDigits="fractionDigits"
-                                locale="vi-VN"
-                                placeholder="0"
-                                fluid
-                                :invalid="!!err('cost_price')"
-                            />
-                            <small v-if="err('cost_price')" class="field-error">{{ err('cost_price') }}</small>
-                            <small v-else class="field-hint">Để trống nếu chưa biết (tính là 0).</small>
-                        </div>
+                    <div class="pr-check">
+                        <Checkbox v-model="form.qty_pricing" inputId="p-qty" binary />
+                        <label for="p-qty">Giá theo số lượng</label>
                     </div>
-                </section>
 
-                <!-- Đơn vị quy đổi -->
-                <section class="pr-section" aria-labelledby="p-conv-title">
-                    <h3 id="p-conv-title" class="pr-section-title">Đơn vị quy đổi</h3>
+                    <div v-if="form.qty_pricing" class="pr-tiers">
+                        <p class="field-hint pr-tiers-note">
+                            Khi bán từ số lượng này trở lên, màn hình bán hàng sẽ hỏi có áp dụng giá tương ứng hay không.
+                        </p>
 
-                    <p v-if="!form.conversions.length" class="field-hint pr-empty">
-                        Không bắt buộc. Dùng khi bán theo thùng, lố, hộp... (bằng nhiều {{ baseName }}).
-                    </p>
+                        <p v-if="!tierLists.length" class="field-hint">
+                            Chưa có bảng giá nào khác. Hãy thêm (ví dụ "Giá sỉ") trong Danh mục &amp; đơn vị, tab Bảng giá.
+                        </p>
 
-                    <div v-for="(c, i) in form.conversions" :key="i" class="pr-box">
-                        <div class="pr-unit-top">
-                            <ImageInput
-                                v-model:file="c.image_file"
-                                v-model:remove="c.remove_image"
-                                :url="c.image_url"
-                                size="3rem"
-                                label="ảnh đơn vị quy đổi"
-                                :error="err(`units.${i + 1}.image_file`)"
-                            />
-                            <div class="field pr-grow">
-                                <label :for="`p-conv-unit-${i}`">Đơn vị quy đổi<span class="al-req" aria-hidden="true">*</span></label>
-                                <Select
-                                    v-model="c.unit_id"
-                                    :inputId="`p-conv-unit-${i}`"
-                                    :options="conversionOptions(i)"
-                                    optionLabel="name"
-                                    optionValue="id"
-                                    placeholder="Chọn đơn vị quy đổi"
-                                    aria-required="true"
-                                    fluid
-                                    :invalid="!!err(`units.${i + 1}.unit_id`)"
-                                />
-                                <small v-if="err(`units.${i + 1}.unit_id`)" class="field-error">{{ err(`units.${i + 1}.unit_id`) }}</small>
-                            </div>
-                            <div class="field pr-factor">
-                                <label :for="`p-conv-factor-${i}`">Số lượng quy đổi<span class="al-req" aria-hidden="true">*</span></label>
+                        <div v-for="l in tierLists" :key="l.id" class="pr-tier">
+                            <span class="pr-tier-name">{{ l.name }}</span>
+                            <div class="field">
+                                <label :for="`p-tier-qty-${l.id}`">Từ số lượng ({{ unitName }})</label>
                                 <InputNumber
-                                    v-model="c.factor"
-                                    :inputId="`p-conv-factor-${i}`"
-                                    :min="2"
-                                    :useGrouping="false"
-                                    placeholder="VD: 24"
-                                    aria-required="true"
+                                    v-model="form.tiers[l.id].min_qty"
+                                    :inputId="`p-tier-qty-${l.id}`"
+                                    :min="0"
+                                    :maxFractionDigits="3"
+                                    locale="vi-VN"
+                                    placeholder="VD: 100"
                                     fluid
-                                    :invalid="!!err(`units.${i + 1}.factor`)"
+                                    :invalid="!!err(`prices.${tierIndex(l.id)}.min_qty`)"
                                 />
-                                <small v-if="err(`units.${i + 1}.factor`)" class="field-error">{{ err(`units.${i + 1}.factor`) }}</small>
+                                <small v-if="err(`prices.${tierIndex(l.id)}.min_qty`)" class="field-error">{{ err(`prices.${tierIndex(l.id)}.min_qty`) }}</small>
                             </div>
-                            <Button
-                                type="button"
-                                icon="pi pi-times"
-                                text
-                                rounded
-                                severity="danger"
-                                aria-label="Bỏ đơn vị quy đổi này"
-                                class="pr-x"
-                                @click="removeConversion(i)"
-                            />
-                        </div>
-
-                        <div class="pr-prices">
-                            <div v-for="l in activeLists" :key="l.id" class="field pr-price">
-                                <label :for="`p-conv-price-${i}-${l.id}`">{{ l.name }}</label>
+                            <div class="field">
+                                <label :for="`p-tier-price-${l.id}`">Giá</label>
                                 <InputNumber
-                                    v-model="c.prices[l.id]"
-                                    :inputId="`p-conv-price-${i}-${l.id}`"
+                                    v-model="form.tiers[l.id].price"
+                                    :inputId="`p-tier-price-${l.id}`"
                                     :min="0"
                                     :minFractionDigits="fractionDigits"
                                     :maxFractionDigits="fractionDigits"
                                     locale="vi-VN"
                                     placeholder="0"
                                     fluid
+                                    :invalid="!!err(`prices.${tierIndex(l.id)}.price`)"
                                 />
+                                <small v-if="err(`prices.${tierIndex(l.id)}.price`)" class="field-error">{{ err(`prices.${tierIndex(l.id)}.price`) }}</small>
                             </div>
                         </div>
-                    </div>
-
-                    <small v-if="err('units')" class="field-error">{{ err('units') }}</small>
-                    <div v-if="form.conversions.length < MAX_CONVERSIONS">
-                        <Button
-                            type="button"
-                            label="Thêm đơn vị quy đổi"
-                            icon="pi pi-plus"
-                            size="small"
-                            text
-                            :disabled="!conversionUnits.length"
-                            @click="addConversion"
-                        />
-                        <small v-if="!conversionUnits.length" class="field-hint">Chưa có đơn vị quy đổi, hãy thêm trong Danh mục &amp; đơn vị.</small>
+                        <small v-if="err('qty_pricing')" class="field-error">{{ err('qty_pricing') }}</small>
                     </div>
                 </section>
 
@@ -587,8 +487,11 @@ const subline = (p) => [p.code, p.category, unitSummary(p)].filter(Boolean).join
                         <Checkbox v-model="form.track_stock" inputId="p-track" binary />
                         <label for="p-track">Quản lý tồn kho</label>
                     </div>
+                    <small class="field-hint pr-hint-block">
+                        Bật thì khi bán sẽ trừ kho và không cho bán quá số lượng tồn. Tắt thì không theo dõi số lượng.
+                    </small>
                     <div v-if="form.track_stock" class="field pr-stock">
-                        <label for="p-stock">Tồn kho ban đầu ({{ baseName }})</label>
+                        <label for="p-stock">Tồn kho ban đầu ({{ unitName }})</label>
                         <InputNumber
                             v-model="form.opening_stock"
                             inputId="p-stock"
@@ -601,7 +504,6 @@ const subline = (p) => [p.code, p.category, unitSummary(p)].filter(Boolean).join
                         />
                         <small v-if="err('opening_stock')" class="field-error">{{ err('opening_stock') }}</small>
                     </div>
-                    <small v-else class="field-hint">Không bật thì sản phẩm không theo dõi số lượng tồn (phù hợp dịch vụ, hàng không cần đếm).</small>
                 </section>
 
                 <div class="field">
@@ -655,22 +557,22 @@ const subline = (p) => [p.code, p.category, unitSummary(p)].filter(Boolean).join
 .pr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0 1rem; }
 .pr-section { border-top: 1px solid var(--al-line); padding-top: 0.9rem; margin-bottom: 1rem; }
 .pr-section-title { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.75rem; }
-.pr-empty { margin: 0 0 0.5rem; }
-.pr-box { border: 1px solid var(--al-line); border-radius: 0.6rem; padding: 0.75rem; margin-bottom: 0.5rem; }
-.pr-unit-top { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-start; }
-.pr-unit-top .field { margin-bottom: 0; }
-.pr-grow { flex: 1 1 10rem; min-width: 0; }
-.pr-factor { flex: 0 1 10rem; }
-.pr-x { margin-top: 1.5rem; }
-.pr-prices { display: flex; flex-wrap: wrap; gap: 0.75rem; }
-.pr-box .pr-prices { margin-top: 0.75rem; }
-.pr-price { flex: 1 1 10rem; margin-bottom: 0 !important; }
+.pr-retail { max-width: 16rem; }
 .pr-check { display: flex; align-items: center; gap: 0.5rem; }
 .pr-check label { font-weight: 500; }
+.pr-hint-block { display: block; margin: 0.35rem 0 0; }
+.pr-tiers { margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--al-line); border-radius: 0.6rem; }
+.pr-tiers-note { margin: 0 0 0.75rem; }
+.pr-tier { display: grid; grid-template-columns: 7rem 1fr 1fr; gap: 0 0.75rem; align-items: start; margin-bottom: 0.5rem; }
+.pr-tier .field { margin-bottom: 0; }
+.pr-tier-name { padding-top: 1.7rem; font-weight: 500; overflow-wrap: anywhere; }
 .pr-stock { margin-top: 0.75rem; max-width: 16rem; }
+.pr-tag { margin-left: 0.4rem; }
 
 @media (max-width: 560px) {
     .pr-head { flex-direction: column; }
     .pr-head-name { width: 100%; flex-basis: auto; }
+    .pr-tier { grid-template-columns: 1fr 1fr; }
+    .pr-tier-name { grid-column: 1 / -1; padding-top: 0; }
 }
 </style>

@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['code', 'name', 'barcode', 'category_id', 'tax_rate', 'cost_price', 'track_stock', 'opening_stock', 'image', 'description', 'is_active'])]
+#[Fillable(['code', 'name', 'barcode', 'category_id', 'unit_id', 'tax_rate', 'qty_pricing', 'cost_price', 'track_stock', 'opening_stock', 'image', 'description', 'is_active'])]
 class Product extends Model
 {
     use HasUploadedImage;
@@ -19,6 +19,7 @@ class Product extends Model
         return [
             'is_active' => 'boolean',
             'track_stock' => 'boolean',
+            'qty_pricing' => 'boolean',
             'tax_rate' => 'float',
             'cost_price' => 'float',
             'opening_stock' => 'float',
@@ -43,8 +44,13 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
-    public function units(): HasMany
+    public function unit(): BelongsTo
     {
-        return $this->hasMany(ProductUnit::class)->orderBy('factor');
+        return $this->belongsTo(Unit::class);
+    }
+
+    public function prices(): HasMany
+    {
+        return $this->hasMany(ProductPrice::class);
     }
 }

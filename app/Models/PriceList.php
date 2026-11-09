@@ -16,6 +16,6 @@ class PriceList extends Model
 
     public function prices(): HasMany
     {
-        return $this->hasMany(ProductUnitPrice::class);
+        return $this->hasMany(ProductPrice::class);
     }
 }

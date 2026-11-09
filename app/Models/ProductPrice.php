@@ -6,17 +6,17 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['product_unit_id', 'price_list_id', 'price'])]
-class ProductUnitPrice extends Model
+#[Fillable(['product_id', 'price_list_id', 'price', 'min_qty'])]
+class ProductPrice extends Model
 {
     protected function casts(): array
     {
-        return ['price' => 'float'];
+        return ['price' => 'float', 'min_qty' => 'float'];
     }
 
-    public function productUnit(): BelongsTo
+    public function product(): BelongsTo
     {
-        return $this->belongsTo(ProductUnit::class);
+        return $this->belongsTo(Product::class);
     }
 
     public function priceList(): BelongsTo

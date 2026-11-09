@@ -5,10 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Models\PriceList;
 use App\Models\Product;
-use App\Models\ProductUnit;
 use App\Models\Unit;
 use App\Support\DocumentNumber;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -30,7 +28,7 @@ class ProductController extends Controller
         $category = $request->query('category');
         $status = in_array($request->query('status'), ['active', 'inactive'], true) ? $request->query('status') : null;
 
-        $products = Product::with(['category:id,name', 'units.unit:id,name', 'units.prices'])
+        $products = Product::with(['category:id,name', 'unit:id,name', 'prices'])
             ->search($search)
             ->when($category === 'none', fn ($q) => $q->whereNull('category_id'))
             ->when(is_numeric($category), fn ($q) => $q->where('category_id', (int) $category))
@@ -45,23 +43,19 @@ class ProductController extends Controller
                 'barcode' => $p->barcode,
                 'category_id' => $p->category_id,
                 'category' => $p->category?->name,
+                'unit_id' => $p->unit_id,
+                'unit' => $p->unit?->name,
                 'tax_rate' => $p->tax_rate,
                 'description' => $p->description,
                 'is_active' => $p->is_active,
                 'image_url' => $p->image_url,
-                'cost_price' => $p->cost_price,
+                'qty_pricing' => $p->qty_pricing,
                 'track_stock' => $p->track_stock,
                 'opening_stock' => $p->opening_stock,
-                'units' => $p->units->map(fn ($u) => [
-                    'id' => $u->id,
-                    'unit_id' => $u->unit_id,
-                    'unit' => $u->unit?->name,
-                    'factor' => $u->factor,
-                    'image_url' => $u->image_url,
-                    'prices' => $u->prices->map(fn ($pr) => [
-                        'price_list_id' => $pr->price_list_id,
-                        'price' => $pr->price,
-                    ])->values(),
+                'prices' => $p->prices->map(fn ($pr) => [
+                    'price_list_id' => $pr->price_list_id,
+                    'price' => $pr->price,
+                    'min_qty' => $pr->min_qty,
                 ])->values(),
             ]);
 
@@ -69,13 +63,13 @@ class ProductController extends Controller
             'products' => $products,
             'filters' => ['search' => $search, 'category' => $category ?: null, 'status' => $status],
             'categories' => Category::orderBy('name')->get(['id', 'name', 'is_active']),
-            'units' => Unit::orderBy('name')->get(['id', 'name', 'kind', 'is_default', 'is_active']),
+            'units' => Unit::orderBy('name')->get(['id', 'name', 'is_default', 'is_active']),
             'priceLists' => PriceList::orderByDesc('is_default')->orderBy('name')->get(['id', 'name', 'is_default', 'is_active']),
         ]);
     }
 
     /**
-     * Kiểm tra trùng mã sản phẩm / mã vạch ngay khi nhập .
+     * Kiểm tra trùng mã sản phẩm / mã vạch ngay khi nhập.
      * Cùng định dạng trả về với users.check để dùng chung composable useUniqueCheck.
      */
     public function check(Request $request): JsonResponse
@@ -95,14 +89,14 @@ class ProductController extends Controller
 
         $found = Product::where($field, $value)
             ->when($ignore, fn ($q) => $q->whereKeyNot($ignore))
-            ->first(['id', 'name'])?->name;
+            ->first(['id', 'name']);
 
         $label = $field === 'code' ? 'Mã này' : 'Mã vạch này';
 
         return response()->json([
             'valid' => true,
-            'available' => $found === null,
-            'message' => $found !== null ? "{$label} đã dùng cho sản phẩm \"{$found}\"." : null,
+            'available' => ! $found,
+            'message' => $found ? "{$label} đã dùng cho sản phẩm \"{$found->name}\"." : null,
         ]);
     }
 
@@ -116,7 +110,7 @@ class ProductController extends Controller
             $product->image = $this->imageAttrs(null, $data)['image'] ?? null;
             $product->save();
 
-            $this->syncUnits($product, $data['units']);
+            $this->syncPrices($product, $data);
         });
 
         return redirect()->route('products.index')->with('success', 'Đã thêm sản phẩm.');
@@ -134,7 +128,7 @@ class ProductController extends Controller
             $product->fill($this->imageAttrs($product, $data));
             $product->save();
 
-            $this->syncUnits($product, $data['units']);
+            $this->syncPrices($product, $data);
         });
 
         return redirect()->route('products.index')->with('success', 'Đã cập nhật sản phẩm.');
@@ -142,8 +136,6 @@ class ProductController extends Controller
 
     public function destroy(Product $product): RedirectResponse
     {
-        $product->load('units');
-        $product->units->each->deleteUploadedImage();
         $product->deleteUploadedImage();
         $product->delete();
 
@@ -153,31 +145,27 @@ class ProductController extends Controller
     private function validated(Request $request, ?Product $product = null): array
     {
         $id = $product?->id;
-        $image = ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'];
+        $qtyPricing = $request->boolean('qty_pricing');
 
         $validator = validator($request->all(), [
             'code' => ['nullable', 'string', 'max:50', 'regex:'.self::CODE_REGEX, Rule::unique('products', 'code')->ignore($id)],
             'name' => ['required', 'string', 'max:255'],
             'barcode' => ['nullable', 'string', 'max:50', 'regex:'.self::CODE_REGEX, Rule::unique('products', 'barcode')->ignore($id)],
             'category_id' => ['required', Rule::exists('categories', 'id')],
+            'unit_id' => ['required', Rule::exists('units', 'id')],
             'tax_rate' => ['required', 'numeric', 'between:0,100'],
             'description' => ['nullable', 'string', 'max:2000'],
             'is_active' => ['required', 'boolean'],
-            'image_file' => $image,
+            'image_file' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'remove_image' => ['nullable', 'boolean'],
-            'cost_price' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
             'track_stock' => ['nullable', 'boolean'],
             'opening_stock' => ['nullable', 'numeric', 'min:0', 'max:999999999'],
+            'qty_pricing' => ['nullable', 'boolean'],
 
-            'units' => ['required', 'array', 'min:1', 'max:6'],
-            'units.*.unit_id' => ['required', 'distinct', Rule::exists('units', 'id')],
-            'units.*.factor' => ['required', 'integer', 'min:1', 'max:100000'],
-            'units.*.image_file' => $image,
-            'units.*.remove_image' => ['nullable', 'boolean'],
-            'units.*.prices' => ['nullable', 'array'],
-            'units.*.prices.*.price_list_id' => ['required', Rule::exists('price_lists', 'id')],
-            'units.*.prices.*.price' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
-
+            'prices' => ['required', 'array', 'max:20'],
+            'prices.*.price_list_id' => ['required', 'distinct', Rule::exists('price_lists', 'id')],
+            'prices.*.price' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
+            'prices.*.min_qty' => ['nullable', 'numeric', 'gt:0', 'max:999999999'],
         ], [
             'code.regex' => 'Mã sản phẩm chỉ gồm chữ, số, dấu chấm, gạch dưới hoặc gạch ngang.',
             'code.unique' => 'Mã sản phẩm này đã tồn tại.',
@@ -188,67 +176,62 @@ class ProductController extends Controller
             'barcode.unique' => 'Mã vạch này đã được dùng cho sản phẩm khác.',
             'category_id.required' => 'Vui lòng chọn danh mục.',
             'category_id.exists' => 'Danh mục không tồn tại.',
+            'unit_id.required' => 'Vui lòng chọn đơn vị tính.',
+            'unit_id.exists' => 'Đơn vị tính không tồn tại.',
             'tax_rate.required' => 'Vui lòng chọn mức thuế.',
             'tax_rate.between' => 'Mức thuế phải từ 0 đến 100%.',
-            'cost_price.numeric' => 'Giá vốn phải là số.',
-            'cost_price.min' => 'Giá vốn không được âm.',
+            'image_file.image' => 'Tệp phải là ảnh.',
+            'image_file.mimes' => 'Ảnh chỉ nhận định dạng JPG, PNG hoặc WebP.',
+            'image_file.max' => 'Ảnh tối đa 2 MB.',
             'opening_stock.numeric' => 'Tồn kho ban đầu phải là số.',
             'opening_stock.min' => 'Tồn kho ban đầu không được âm.',
-            'units.*.image_file.image' => 'Tệp phải là ảnh.',
-            'units.*.image_file.mimes' => 'Ảnh chỉ nhận định dạng JPG, PNG hoặc WebP.',
-            'units.*.image_file.max' => 'Ảnh tối đa 2 MB.',
-            'units.required' => 'Cần ít nhất một đơn vị tính.',
-            'units.min' => 'Cần ít nhất một đơn vị tính.',
-            'units.max' => 'Tối đa 6 đơn vị tính cho một sản phẩm.',
-            'units.*.unit_id.required' => 'Vui lòng chọn đơn vị tính.',
-            'units.*.unit_id.distinct' => 'Có đơn vị tính bị chọn trùng.',
-            'units.*.unit_id.exists' => 'Đơn vị tính không tồn tại.',
-            'units.*.factor.required' => 'Vui lòng nhập số lượng quy đổi.',
-            'units.*.factor.integer' => 'Số lượng quy đổi phải là số nguyên.',
-            'units.*.factor.min' => 'Số lượng quy đổi tối thiểu là 1.',
-            'units.*.prices.*.price.numeric' => 'Giá phải là số.',
-            'units.*.prices.*.price.min' => 'Giá không được âm.',
+            'prices.*.price.numeric' => 'Giá phải là số.',
+            'prices.*.price.min' => 'Giá không được âm.',
+            'prices.*.min_qty.numeric' => 'Số lượng phải là số.',
+            'prices.*.min_qty.gt' => 'Số lượng phải lớn hơn 0.',
         ]);
 
-        $validator->after(function (Validator $v) use ($request, $id) {
-            $units = array_values((array) $request->input('units', []));
+        $validator->after(function (Validator $v) use ($request, $qtyPricing) {
+            $prices = array_values((array) $request->input('prices', []));
+            $defaultId = (int) PriceList::where('is_default', true)->value('id');
+            $hasTier = false;
 
-            // Phải có đúng một đơn vị cơ bản (quy đổi = 1)
-            $baseIndexes = collect($units)->keys()->filter(fn ($i) => (int) ($units[$i]['factor'] ?? 0) === 1)->values();
-            if ($baseIndexes->count() !== 1 && ! $v->errors()->has('units')) {
-                $v->errors()->add('units', 'Cần đúng một đơn vị cơ bản (số lượng quy đổi = 1).');
-            }
+            foreach ($prices as $i => $row) {
+                $price = $row['price'] ?? null;
+                $filled = $price !== null && $price !== '';
 
-            // Giá bán lẻ (bảng giá mặc định, đơn vị cơ bản) là bắt buộc
-            if ($baseIndexes->count() === 1) {
-                $i = $baseIndexes->first();
-                $defaultId = PriceList::where('is_default', true)->value('id');
-                $retail = collect($units[$i]['prices'] ?? [])->first(fn ($p) => (int) ($p['price_list_id'] ?? 0) === (int) $defaultId);
-                if (! isset($retail['price']) || $retail['price'] === '') {
-                    $v->errors()->add("units.{$i}.retail_price", 'Vui lòng nhập giá bán lẻ.');
-                }
-            }
+                // Giá bán lẻ (bảng giá mặc định) là bắt buộc
+                if ((int) ($row['price_list_id'] ?? 0) === $defaultId) {
+                    if (! $filled) {
+                        $v->errors()->add("prices.{$i}.price", 'Vui lòng nhập giá bán lẻ.');
+                    }
 
-            // Đơn vị cơ bản phải thuộc loại "cơ bản", đơn vị quy đổi thuộc loại "quy đổi" và quy đổi > 1
-            $kinds = Unit::whereIn('id', collect($units)->pluck('unit_id')->filter()->all())->pluck('kind', 'id');
-            foreach ($units as $i => $row) {
-                $kind = $kinds[(int) ($row['unit_id'] ?? 0)] ?? null;
-                if ($kind === null || $v->errors()->has("units.{$i}.unit_id")) {
                     continue;
                 }
-                $isBase = (int) ($row['factor'] ?? 0) === 1;
-                if ($isBase && $kind !== Unit::BASE) {
-                    $v->errors()->add("units.{$i}.unit_id", 'Hãy chọn một đơn vị thuộc loại "Đơn vị cơ bản".');
-                } elseif (! $isBase && $kind !== Unit::CONVERSION) {
-                    $v->errors()->add("units.{$i}.unit_id", 'Hãy chọn một đơn vị thuộc loại "Đơn vị quy đổi".');
+
+                if (! $qtyPricing) {
+                    continue;
                 }
+
+                // Giá theo số lượng: đã nhập giá thì phải có số lượng tối thiểu, và ngược lại
+                $minQty = $row['min_qty'] ?? null;
+                $hasQty = $minQty !== null && $minQty !== '';
+                if ($filled && ! $hasQty) {
+                    $v->errors()->add("prices.{$i}.min_qty", 'Nhập số lượng tối thiểu.');
+                }
+                if ($hasQty && ! $filled) {
+                    $v->errors()->add("prices.{$i}.price", 'Nhập giá.');
+                }
+                $hasTier = $hasTier || ($filled && $hasQty);
             }
 
+            if ($qtyPricing && ! $hasTier && ! $v->errors()->has('prices')) {
+                $v->errors()->add('qty_pricing', 'Hãy khai báo ít nhất một mức giá theo số lượng, hoặc tắt "Giá theo số lượng".');
+            }
         });
 
         $data = $validator->validate();
-
-        $data['units'] = array_values($data['units']);
+        $data['prices'] = array_values($data['prices']);
 
         return $data;
     }
@@ -259,8 +242,11 @@ class ProductController extends Controller
             'name' => $data['name'],
             'barcode' => $data['barcode'] ?? null,
             'category_id' => $data['category_id'],
+            'unit_id' => $data['unit_id'],
             'tax_rate' => $data['tax_rate'],
-            'cost_price' => $data['cost_price'] ?? 0, // chưa biết giá vốn thì để 0
+            'qty_pricing' => (bool) ($data['qty_pricing'] ?? false),
+            // Trạng thái này được lưu để module Kho / Bán hàng áp dụng: chỉ sản phẩm bật quản lý tồn kho
+            // mới bị trừ kho khi bán và không được bán quá số lượng tồn.
             'track_stock' => $track = (bool) ($data['track_stock'] ?? false),
             'opening_stock' => $track ? ($data['opening_stock'] ?? 0) : 0,
             'description' => $data['description'] ?? null,
@@ -268,39 +254,40 @@ class ProductController extends Controller
         ];
     }
 
-    /** Đồng bộ theo unit_id để product_units.id ổn định cho các module tồn kho / bán hàng sau này. */
-    private function syncUnits(Product $product, array $units): void
+    /**
+     * Giá bán lẻ luôn được lưu. Các bảng giá khác (giá theo số lượng) chỉ được cập nhật khi bật
+     * "Giá theo số lượng"; khi tắt thì giữ nguyên dữ liệu cũ nhưng không áp dụng.
+     */
+    private function syncPrices(Product $product, array $data): void
     {
-        $existing = $product->units()->get()->keyBy('unit_id');
-        $keep = [];
+        $qtyPricing = (bool) ($data['qty_pricing'] ?? false);
+        $defaultId = (int) PriceList::where('is_default', true)->value('id');
 
-        foreach ($units as $row) {
-            /** @var ProductUnit $pu */
-            $pu = $existing->get((int) $row['unit_id']) ?? $product->units()->make(['unit_id' => $row['unit_id']]);
-            $pu->factor = $row['factor'];
-            $pu->fill($this->imageAttrs($pu, $row));
-            $pu->save();
-            $keep[] = $pu->id;
+        foreach ($data['prices'] as $row) {
+            $listId = (int) $row['price_list_id'];
+            $isDefault = $listId === $defaultId;
+            $price = $row['price'] ?? null;
+            $hasPrice = $price !== null && $price !== '';
 
-            $listIds = [];
-            foreach ($row['prices'] ?? [] as $p) {
-                $pu->prices()->updateOrCreate(
-                    ['price_list_id' => $p['price_list_id']],
-                    ['price' => $p['price'] ?? 0],
-                );
-                $listIds[] = $p['price_list_id'];
+            if (! $isDefault && ! $qtyPricing) {
+                continue;
             }
-            $pu->prices()->whereNotIn('price_list_id', $listIds)->delete();
-        }
 
-        $product->units()->whereNotIn('id', $keep)->get()->each(function (ProductUnit $pu) {
-            $pu->deleteUploadedImage();
-            $pu->delete();
-        });
+            if (! $isDefault && ! $hasPrice) {
+                $product->prices()->where('price_list_id', $listId)->delete();
+
+                continue;
+            }
+
+            $product->prices()->updateOrCreate(
+                ['price_list_id' => $listId],
+                ['price' => $price ?? 0, 'min_qty' => $isDefault ? null : ($row['min_qty'] ?? null)],
+            );
+        }
     }
 
     /** Ảnh tải lên > xóa ảnh > giữ nguyên. Trả về thuộc tính `image` cần cập nhật (rỗng nếu giữ nguyên). */
-    private function imageAttrs(?Model $model, array $row): array
+    private function imageAttrs(?Product $model, array $row): array
     {
         $file = $row['image_file'] ?? null;
 
