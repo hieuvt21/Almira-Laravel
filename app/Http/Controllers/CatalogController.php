@@ -27,7 +27,7 @@ class CatalogController extends Controller
     {
         return Inertia::render('Catalog/Index', [
             'categories' => Category::withCount('products')->orderBy('name')->get(),
-            'units' => Unit::withCount('productUnits')->orderBy('name')->get(),
+            'units' => Unit::withCount('products')->orderBy('name')->get(),
             'priceLists' => PriceList::withCount('prices')->orderByDesc('is_default')->orderBy('name')->get(),
         ]);
     }
@@ -54,6 +54,9 @@ class CatalogController extends Controller
             return back()->withErrors(['is_active' => 'Không thể ngừng dùng bảng giá mặc định.']);
         }
 
+        if ($type === 'units' && $item->is_default) {
+            $data['is_default'] = true; // muốn đổi mặc định thì chọn đơn vị khác làm mặc định
+        }
         if ($type === 'price-lists' && $item->is_default) {
             $data['is_default'] = true; // muốn đổi mặc định thì chọn bảng giá khác làm mặc định
         }
@@ -72,7 +75,10 @@ class CatalogController extends Controller
         if ($type === 'price-lists' && $item->is_default) {
             return back()->with('error', 'Không thể xóa bảng giá mặc định.');
         }
-        if ($type === 'units' && $item->productUnits()->exists()) {
+        if ($type === 'units' && $item->is_default) {
+            return back()->with('error', 'Không thể xóa đơn vị mặc định. Hãy chọn đơn vị khác làm mặc định trước.');
+        }
+        if ($type === 'units' && $item->products()->exists()) {
             return back()->with('error', 'Đơn vị này đang được sản phẩm sử dụng nên không thể xóa.');
         }
 
@@ -105,13 +111,23 @@ class CatalogController extends Controller
         if ($type === 'price-lists') {
             $rules['is_default'] = ['required', 'boolean'];
         }
+        if ($type === 'units') {
+            $rules['is_default'] = ['required', 'boolean'];
+        }
 
         return $request->validate($rules, $messages);
     }
 
-    /** Chỉ một bảng giá được là mặc định. */
+    /** Chỉ một bảng giá được là mặc định; đơn vị cũng chỉ có một mặc định (được chọn sẵn khi thêm sản phẩm). */
     private function afterSave(Model $item, string $type): void
     {
+        if ($type === 'units' && $item->is_default) {
+            Unit::whereKeyNot($item->id)->update(['is_default' => false]);
+            if (! $item->is_active) {
+                $item->update(['is_active' => true]);
+            }
+        }
+
         if ($type === 'price-lists' && $item->is_default) {
             PriceList::whereKeyNot($item->id)->update(['is_default' => false]);
             if (! $item->is_active) {

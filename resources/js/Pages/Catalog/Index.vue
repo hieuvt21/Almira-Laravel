@@ -31,7 +31,7 @@ defineProps({
                         <CatalogList type="categories" noun="danh mục" :items="categories" countField="products_count" countLabel="Sản phẩm" />
                     </TabPanel>
                     <TabPanel value="units">
-                        <CatalogList type="units" noun="đơn vị tính" :items="units" countField="product_units_count" countLabel="Sản phẩm dùng" />
+                        <CatalogList type="units" noun="đơn vị tính" :items="units" countField="products_count" countLabel="Sản phẩm dùng" />
                     </TabPanel>
                     <TabPanel value="price-lists">
                         <CatalogList type="price-lists" noun="bảng giá" :items="priceLists" countField="prices_count" countLabel="Giá đã nhập" />

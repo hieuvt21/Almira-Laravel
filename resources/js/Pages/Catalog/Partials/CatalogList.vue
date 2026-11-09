@@ -27,8 +27,11 @@ const editing = ref(null);
 
 const form = useForm({ name: '', description: '', is_default: false, is_active: true });
 
+const isUnit = computed(() => props.type === 'units');
+
 const isCategory = computed(() => props.type === 'categories');
 const isPriceList = computed(() => props.type === 'price-lists');
+const hasDefault = computed(() => isPriceList.value || isUnit.value);
 
 function openCreate() {
     editing.value = null;
@@ -140,20 +143,20 @@ function remove(item) {
     >
         <form @submit.prevent="submit" novalidate>
             <div class="field">
-                <label for="c-name">Tên</label>
+                <label for="c-name">Tên<span class="al-req" aria-hidden="true">*</span></label>
                 <InputText id="c-name" v-model="form.name" autocomplete="off" fluid :invalid="!!form.errors.name" />
                 <small v-if="form.errors.name" class="field-error">{{ form.errors.name }}</small>
             </div>
 
             <div v-if="isCategory" class="field">
-                <label for="c-desc">Mô tả <span class="field-hint">(không bắt buộc)</span></label>
+                <label for="c-desc">Mô tả</label>
                 <InputText id="c-desc" v-model="form.description" autocomplete="off" fluid :invalid="!!form.errors.description" />
                 <small v-if="form.errors.description" class="field-error">{{ form.errors.description }}</small>
             </div>
 
-            <div v-if="isPriceList" class="field" style="flex-direction: row; align-items: center; gap: 0.5rem">
+            <div v-if="hasDefault" class="field" style="flex-direction: row; align-items: center; gap: 0.5rem">
                 <Checkbox v-model="form.is_default" inputId="c-default" binary :disabled="editing?.is_default" />
-                <label for="c-default">Dùng làm bảng giá mặc định</label>
+                <label for="c-default">{{ isUnit ? 'Dùng làm đơn vị mặc định khi thêm sản phẩm' : 'Dùng làm bảng giá mặc định' }}</label>
             </div>
 
             <div class="field" style="flex-direction: row; align-items: center; gap: 0.5rem">
