@@ -1,49 +1,73 @@
 <?php
-// deploy-helper.php
-// Tắt hiển thị lỗi mặc định để tránh lộ cấu trúc thư mục server
-error_reporting(0);
+// deploy-helper.php (bản có chẩn đoán lỗi)
+// Không hiện lỗi ra ngoài, nhưng mọi lỗi nghiêm trọng đều được trả về dạng JSON để workflow in ra.
+ini_set('display_errors', '0');
+error_reporting(E_ALL);
+@set_time_limit(300);
+@ini_set('memory_limit', '512M');
 header('Content-Type: application/json');
 
-// 1. Tự động tìm và đọc biến DEPLOY_TOKEN từ file .env
-$envPath = __DIR__ . '/../.env';
-$deployToken = '';
-if (file_exists($envPath)) {
-    $envContent = file_get_contents($envPath);
-    if (preg_match('/^DEPLOY_TOKEN=(.*)$/m', $envContent, $matches)) {
-        // Loại bỏ khoảng trắng hoặc ký tự thừa (như \r, \n)
-        $deployToken = trim($matches[1]);
+register_shutdown_function(function () {
+    $e = error_get_last();
+    if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        if (!headers_sent()) {
+            http_response_code(500);
+        }
+        echo json_encode([
+            'error' => 'Lỗi nghiêm trọng: ' . $e['message'],
+            'at' => basename($e['file']) . ':' . $e['line'],
+            'php' => PHP_VERSION,
+        ], JSON_UNESCAPED_UNICODE);
     }
+});
+
+function fail(int $code, string $message, array $extra = []): void
+{
+    http_response_code($code);
+    echo json_encode(['error' => $message, 'php' => PHP_VERSION] + $extra, JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
-// Lấy token từ header của lệnh curl (X-Deploy-Token sẽ được PHP chuyển thành HTTP_X_DEPLOY_TOKEN)
+// 1. Đọc DEPLOY_TOKEN từ .env
+$root = dirname(__DIR__);
+$deployToken = '';
+if (is_file($root . '/.env') && preg_match('/^DEPLOY_TOKEN=(.*)$/m', (string) file_get_contents($root . '/.env'), $m)) {
+    $deployToken = trim($m[1], " \t\n\r\0\x0B\"'");
+}
 $headerToken = $_SERVER['HTTP_X_DEPLOY_TOKEN'] ?? '';
 if (!$deployToken || !hash_equals($deployToken, $headerToken)) {
-    http_response_code(401);
-    die(json_encode(['error' => 'Unauthorized. Sai hoặc thiếu DEPLOY_TOKEN trong .env.']));
+    fail(401, 'Unauthorized. Sai hoặc thiếu DEPLOY_TOKEN trong .env.');
 }
 
-// 2. Tìm và giải nén file deploy.zip
-$zipPath = __DIR__ . '/../deploy.zip';
-if (file_exists($zipPath)) {
-    $zip = new ZipArchive;
-    if ($zip->open($zipPath) === TRUE) {
-        $zip->extractTo(__DIR__ . '/../');
-        $zip->close();
-        unlink($zipPath); // Xóa file zip sau khi giải nén xong
-    } else {
-        http_response_code(500);
-        die(json_encode(['error' => 'Không thể mở file deploy.zip để giải nén.']));
-    }
-} else {
-    http_response_code(404);
-    die(json_encode(['error' => 'Không tìm thấy file deploy.zip trên máy chủ.']));
+// 2. Giải nén deploy.zip
+$zipPath = $root . '/deploy.zip';
+if (!is_file($zipPath)) {
+    fail(404, 'Không tìm thấy file deploy.zip trên máy chủ.', ['looked_in' => $zipPath]);
+}
+if (!class_exists('ZipArchive')) {
+    fail(500, 'PHP trên cPanel chưa bật extension zip (MultiPHP INI Editor / Select PHP Version).');
 }
 
-// 3. Khởi động hạt nhân Laravel để chạy Artisan
+$zip = new ZipArchive;
+$opened = $zip->open($zipPath);
+if ($opened !== true) {
+    fail(500, 'Không mở được deploy.zip (file có thể tải lên chưa đủ hoặc bị hỏng).', [
+        'zip_error_code' => $opened,
+        'zip_size_bytes' => filesize($zipPath),
+    ]);
+}
+$files = $zip->numFiles;
+if (!$zip->extractTo($root)) {
+    $zip->close();
+    fail(500, 'Giải nén thất bại (thường do không đủ quyền ghi hoặc hết dung lượng).', ['files' => $files, 'root' => $root]);
+}
+$zip->close();
+@unlink($zipPath);
+
+// 3. Chạy Artisan
 try {
-    // Đảm bảo code mới (có vendor) đã được giải nén trước khi gọi require
-    require __DIR__.'/../vendor/autoload.php';
-    $app = require_once __DIR__.'/../bootstrap/app.php';
+    require $root . '/vendor/autoload.php';
+    $app = require_once $root . '/bootstrap/app.php';
     $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 
     $kernel->call('config:clear');
@@ -51,21 +75,21 @@ try {
     $kernel->call('view:clear');
     $kernel->call('cache:clear');
     $kernel->call('migrate', ['--force' => true]);
-
-    // Tạo quyền, vai trò và tài khoản admin đầu tiên.
-    // An toàn khi chạy lại: chỉ thêm cái còn thiếu, không ghi đè dữ liệu đã có.
+    $migrate = $kernel->output();
     $kernel->call('db:seed', ['--class' => 'RolePermissionSeeder', '--force' => true]);
 
-    // Nạp lại bộ nhớ đệm của Spatie Permission
     $app[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
-
 } catch (\Throwable $e) {
     http_response_code(500);
-    unlink(__FILE__); // Vẫn cố xóa file bảo mật này nếu có lỗi
-    die(json_encode(['error' => 'Lỗi khi chạy lệnh Artisan: ' . $e->getMessage()]));
+    echo json_encode([
+        'error' => 'Lỗi khi chạy lệnh Artisan: ' . $e->getMessage(),
+        'type' => get_class($e),
+        'at' => basename($e->getFile()) . ':' . $e->getLine(),
+        'php' => PHP_VERSION,
+    ], JSON_UNESCAPED_UNICODE);
+    @unlink(__FILE__);
+    exit;
 }
 
-// 4. Tự tiêu hủy: Xóa chính file helper này để bảo mật 100%
-unlink(__FILE__);
-
-echo json_encode(['success' => true, 'message' => 'Triển khai thành công bằng độc lập!']);
+@unlink(__FILE__);
+echo json_encode(['success' => true, 'message' => 'Triển khai thành công!', 'files' => $files, 'migrate' => trim($migrate ?? '')], JSON_UNESCAPED_UNICODE);

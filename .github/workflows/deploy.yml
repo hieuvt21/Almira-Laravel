@@ -55,6 +55,14 @@ jobs:
         if: ${{ env.DT != '' && env.APP_URL != '' }}
         run: |
           sleep 3
-          # Gọi trực tiếp vào URL chứa file helper
-          curl -fsS --retry 3 --retry-delay 5 -X POST "${APP_URL%/}/deploy-helper.php" \
-            -H "X-Deploy-Token: $DT" -H "Accept: application/json"
+          for i in 1 2 3; do
+            code=$(curl -sS -o response.json -w "%{http_code}" -X POST "${APP_URL%/}/deploy-helper.php" \
+              -H "X-Deploy-Token: $DT" -H "Accept: application/json")
+            echo "Lần $i - HTTP $code"
+            cat response.json; echo
+            [ "$code" = "200" ] && exit 0
+            # 500 từ helper không nên retry vì zip đã bị xóa sau lần chạy đầu
+            [ "$code" -ge 400 ] && [ "$code" -lt 600 ] && [ "$code" != "502" ] && [ "$code" != "503" ] && [ "$code" != "504" ] && exit 1
+            sleep 5
+          done
+          exit 1
