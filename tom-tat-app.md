@@ -7,7 +7,7 @@ POS cho **cửa hàng tạp hóa** (1 cửa hàng, 1 kho). Người dùng nói t
 - Dev: Windows + Laragon (`D:\laragon\www\Almira`, `http://almira.test`). Chạy thật: **cPanel** (không Node, không Redis, không SSH): `SESSION_DRIVER=database`, `CACHE_STORE=file`, `QUEUE_CONNECTION=database`.
 - **Deploy tự động**: push vào `main` → GitHub Actions (PHP 8.4, Node 22) cài vendor, build Vite, nén `deploy.zip`, tải qua FTP → `deploy-helper.php` giải nén, chạy `migrate --force` + `RolePermissionSeeder`, xóa cache. `public/build` không commit. Vì push `main` là lên bản thật, thay đổi phải đã kiểm tra.
 - Ảnh tải lên lưu ở `public/uploads/{products,avatars,branding}` (không dùng `storage:link`).
-- `nwidart/laravel-modules` đã cài nhưng **không dùng**: code nằm trong `app/` và `resources/js/Pages/<Module>/`.
+- Không dùng `nwidart/laravel-modules` (đã gỡ): code module nằm trong `app/` và `resources/js/Pages/<Module>/`.
 - Giao diện kính mờ, font Be Vietnam Pro, CSS riêng `resources/css/almira.css` (tiền tố `al-`), alias `@` = `resources/js`.
 
 ## Tiến độ
