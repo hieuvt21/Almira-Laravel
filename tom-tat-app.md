@@ -1,68 +1,62 @@
-# Almira POS – tóm tắt cho AI
-
-Ứng dụng bán hàng (POS) cho **cửa hàng tạp hóa** (1 cửa hàng, 1 kho). Người dùng nói tiếng Việt: **trả lời và viết giao diện bằng tiếng Việt**.
+POS cửa hàng tạp hóa (1 cửa hàng, 1 kho). Trả lời và viết giao diện bằng tiếng Việt. Trả lời ngắn gọn, không hiểu hoặc cần gì thì hỏi lại.
 
 ## Công nghệ và môi trường
-- Laravel 13, PHP 8.3, MySQL. Inertia.js (v3) + Vue 3 (`<script setup>`) + PrimeVue **4** (Aura, KHÔNG dùng v5 vì cần license) + PrimeIcons + Vite.
-- Dev: Windows + Laragon (`D:\laragon\www\Almira`, `http://almira.test`). Chạy thật: **cPanel** (không Node, không Redis).
-- cPanel: build ở máy local rồi upload `public/build`; `SESSION_DRIVER=database`, `CACHE_STORE=file`, `QUEUE_CONNECTION=database`; ảnh tải lên lưu vào `public/uploads/` (không dùng `storage:link`).
-- Chưa dùng `nwidart/laravel-modules`: code module nằm trong `app/` và `resources/js/Pages/<Module>/`.
-- Font Be Vietnam Pro (`@fontsource`), giao diện kính mờ, CSS riêng ở `resources/css/almira.css` (tiền tố `al-`), alias `@` = `resources/js`.
+- Laravel 13, PHP ^8.4, MySQL. Inertia 2 + Vue 3 (`<script setup>`) + PrimeVue 4 (Aura) + PrimeIcons + Vite + Tailwind 3. Spatie `laravel-permission`.
+- Dev: Windows + Laragon (`D:\laragon\www\Almira`, `http://almira.test`). Chạy thật: cPanel (không Node, không Redis, không SSH): `SESSION_DRIVER=database`, `CACHE_STORE=file`, `QUEUE_CONNECTION=database`.
 
-## Đã làm
-Đăng nhập (tên đăng nhập / SĐT / email), phân quyền, Người dùng (avatar, kiểm tra trùng khi nhập), Vai trò & quyền, Giao diện (màu chủ đề, logo, tên cửa hàng, thanh bên), Cửa hàng (thông tin, tiền tệ & thuế, đánh số chứng từ), Hồ sơ cá nhân, Dashboard (trang chung sau đăng nhập, khu báo cáo còn trống), Catalog: Danh mục, Đơn vị tính, Bảng giá (trang `/catalog`, 3 tab) và Sản phẩm (tìm kiếm/lọc/phân trang ở server, kiểm tra trùng mã & mã vạch khi nhập qua `products.check`; mỗi sản phẩm có một đơn vị tính (`products.unit_id`, chọn từ tab Đơn vị tính, có một đơn vị mặc định), một ảnh, thuế chung; giá lưu ở `product_prices` (mỗi bảng giá một dòng, giá bán lẻ = bảng giá mặc định, bắt buộc). **Nhiều loại giá**: mọi bảng giá đang dùng đều nhập được giá trong form; tại POS luôn chọn thủ công được bất kể số lượng. **Tự động chuyển giá theo số lượng** (`products.qty_pricing`, mặc định tắt): khi bật, mỗi bảng giá khác bán lẻ có thêm `min_qty` (để trống = chỉ chọn thủ công); các `min_qty` của một sản phẩm phải khác nhau (server và form đều chặn trùng). Khi tắt thì `min_qty` cũ được giữ nhưng không áp dụng. Quy tắc cho POS: khi `qty_pricing` bật và số lượng của một dòng >= `min_qty` của một bảng giá thì hiện popup hỏi có áp dụng giá đó không (nhiều mức thì lấy mức `min_qty` lớn nhất đã đạt); đồng ý thì dòng đó dùng giá của bảng giá ấy. **Quản lý tồn kho** (`products.track_stock`, mặc định tắt) kèm `opening_stock` tính theo đơn vị tính; module Kho/POS phải tuân thủ: chỉ sản phẩm bật mới bị trừ kho khi bán và không cho tồn âm, sản phẩm tắt thì bỏ qua kho; module Kho sẽ lấy `opening_stock` làm phiếu nhập tồn đầu kỳ. Không có đơn vị quy đổi và không có biến thể (đã bỏ); `products.cost_price` còn trong DB (mặc định 0) cho module Nhập hàng, form sản phẩm không nhập giá vốn. Ô bắt buộc (tên, danh mục, đơn vị tính, giá bán lẻ) đánh dấu sao đỏ class `al-req`).
+- Ảnh tải lên lưu ở `public/uploads/{products,avatars,branding}` (không dùng `storage:link`).
+- Code nằm trong `app/` và `resources/js/Pages/<Module>/`.
+- Giao diện kính mờ, font Be Vietnam Pro, CSS riêng `resources/css/almira.css` (tiền tố `al-`), alias `@` = `resources/js`.
 
-**Chưa làm (dự kiến theo thứ tự):** Kho → Nhập hàng → Bán hàng/POS (hóa đơn, thanh toán, hoàn trả) → Ca làm việc → Báo cáo. Cài đặt bán hàng (mẫu hóa đơn, phương thức thanh toán, chính sách giảm giá/hoàn trả) làm cùng module bán hàng. Chưa có nhật ký hoạt động.
+## Tiến độ
+**Đã có:** đăng nhập (tên đăng nhập/SĐT/email), người dùng, vai trò & quyền, giao diện, cửa hàng (thông tin, tiền tệ & thuế, đánh số chứng từ), hồ sơ, Dashboard (khu báo cáo còn trống), Catalog (danh mục, đơn vị tính, bảng giá), Sản phẩm, Khách hàng (+ nhập/xuất Excel chỉ admin), Hạng khách hàng.
+**Chưa làm, theo thứ tự:** Kho → Nhập hàng → Bán hàng/POS (hóa đơn, thanh toán, hoàn trả; kèm cài đặt mẫu hóa đơn, phương thức thanh toán, chính sách giảm giá/hoàn trả) → Ca làm việc → Báo cáo. Chưa có nhật ký hoạt động. Menu đã khai báo sẵn các mục này, tự hiện khi route tồn tại.
 
-## Xác thực và phân quyền
-- Spatie `laravel-permission`. Vai trò mặc định: `admin`, `manager`, `cashier`, `warehouse` (không xóa/đổi tên được; admin có toàn quyền qua `Gate::before`). Admin tạo thêm vai trò ở giao diện.
-- Quyền dạng `module.action`: `users.*`, `roles.manage`, `products.*`, `inventory.view|adjust`, `sales.pos|view|refund`, `customers.*`, `purchases.*`, `shifts.own|manage`, `reports.view`, `settings.manage`. Khai báo trong `database/seeders/RolePermissionSeeder.php`.
-- Route bảo vệ bằng middleware `can:<quyền>` trong `routes/web.php`; giao diện ẩn/hiện bằng `usePermission().can('...')`. Mọi vai trò sau đăng nhập đều vào `/dashboard`.
-- Không có đăng ký công khai; admin tạo tài khoản.
+## Quy tắc nghiệp vụ cho Kho/POS
+- **Giá**: mỗi sản phẩm một đơn vị tính (`unit_id`), thuế chung (`tax_rate`); giá ở `product_prices` (mỗi bảng giá một dòng; bán lẻ = bảng giá mặc định, bắt buộc). POS luôn chọn thủ công được bảng giá bất kể số lượng.
+- **Giá theo số lượng** (`products.qty_pricing`, mặc định tắt): mỗi bảng giá khác bán lẻ có `min_qty` (trống = chỉ chọn thủ công; trong một sản phẩm không được trùng). Khi bật và số lượng dòng >= `min_qty` thì POS hiện popup hỏi áp dụng giá đó (nhiều mức: lấy `min_qty` lớn nhất đã đạt); đồng ý thì dòng dùng giá bảng giá ấy. Khi tắt, `min_qty` cũ được giữ nhưng không áp dụng.
+- **Tồn kho** (`products.track_stock`, mặc định tắt) + `opening_stock` theo đơn vị tính: chỉ sản phẩm bật mới bị trừ kho khi bán và **không cho tồn âm**; sản phẩm tắt thì bỏ qua kho. Module Kho lấy `opening_stock` làm phiếu nhập tồn đầu kỳ.
+- `products.cost_price` (mặc định 0) dành cho module Nhập hàng; form sản phẩm không nhập giá vốn. Không có đơn vị quy đổi, không có biến thể (đã bỏ).
+- **Khách hàng**: `customers.total_spent` do POS cộng dồn; giảm giá theo hạng: `CustomerTiers::discountFor($total_spent)` (trả %). Hạng cấu hình ở Setting `customer_tiers`.
 
-## Dữ liệu dùng chung (Inertia shared props)
-`auth.user {id,name,username,avatar_url,roles,permissions}`, `branding {name,theme,logo}`, `finance {...}`, `flash {success,error}` (controller dùng `->with('success'|'error', ...)`, layout tự hiện Toast).
+## Phân quyền
+- Vai trò mặc định `admin`, `manager`, `cashier`, `warehouse` (không xóa/đổi tên được); admin có toàn quyền qua `Gate::before`. Seeder chỉ gán quyền mặc định khi vai trò mới tạo, không ghi đè phần đã chỉnh. Admin tạo thêm vai trò ở giao diện.
+- Quyền `module.action`: `users.*`, `roles.manage`, `products.*`, `inventory.view|adjust`, `sales.pos|view|refund`, `customers.*`, `purchases.view|create|update`, `shifts.own|manage`, `reports.view`, `settings.manage`. Khai báo ở `database/seeders/RolePermissionSeeder.php`.
+- Route bảo vệ bằng `can:<quyền>` (hoặc `role:admin`) trong `routes/web.php`; giao diện dùng `usePermission().can('...')`. Mọi vai trò sau đăng nhập vào `/dashboard`. Không có đăng ký công khai.
+- Seeder chỉ tạo tài khoản **`admin` / mật khẩu `admin`** (đổi ngay); tài khoản khác tạo ở giao diện.
 
-## Bảng chính
-`users` (username unique bắt buộc; phone 10 số unique, email, avatar: đều tùy chọn), bảng Spatie, `settings` (key/value), `document_sequences`, `categories`, `units` (một đơn vị mặc định), `price_lists` (một bảng mặc định), `products` (code, barcode unique, unit_id, category_id, tax_rate, qty_pricing, track_stock, opening_stock, cost_price, image), `product_prices` (product_id+price_list_id unique, price, min_qty chỉ dùng cho giá theo số lượng).
+## Dữ liệu dùng chung
+- Inertia shared props: `auth.user {id,name,username,email,avatar_url,roles,permissions}`, `branding`, `finance`, `flash {success,error}` (controller dùng `->with('success'|'error', ...)`, layout tự hiện Toast).
+- Bảng: `users`, bảng Spatie, `settings` (key/value), `document_sequences`, `categories`, `units` (một đơn vị mặc định), `price_lists` (một bảng mặc định), `products` (code, barcode unique, category_id, unit_id, tax_rate, qty_pricing, track_stock, opening_stock, cost_price, image, description, is_active), `product_prices` (product_id+price_list_id unique, price, min_qty), `customers` (code, name, phone unique 10 số, address, occupation, note, birth_date/birth_year, total_spent, sort_name tự sinh, avatar).
 
 ## Thành phần dùng lại
 **Backend**
-- `Setting` (`read/write/json/putJson/storeInfo/finance/branding`) – lưu cài đặt, có cache.
-- `App\Support\DocumentNumber::next('invoice')` – cấp mã chứng từ an toàn song song. Loại: `invoice, sale_return, purchase, stock_check, cash_in, cash_out, shift, product, customer, supplier`.
-- `App\Support\Money::round()/format()` – làm tròn và định dạng tiền theo cài đặt.
-- Trait `Controllers\Concerns\ManagesIdentity` (chuẩn hóa username/email/phone, avatar).
+- `Setting` (`read/write/json/putJson/storeInfo/finance/branding`, có cache).
+- `DocumentNumber::next('invoice')` cấp mã chứng từ an toàn song song. Loại: `invoice` (HD), `sale_return` (TH), `purchase` (PN), `stock_check` (KK), `cash_in` (PT), `cash_out` (PC), `shift` (CA), `product` (SP), `customer` (KH), `supplier` (NCC).
+- `Money::round()/format()` theo cài đặt cửa hàng. `Xlsx` (đọc/ghi Excel). Trait `ManagesIdentity` (chuẩn hóa username/email/phone, avatar), `HasUploadedImage` (ảnh sản phẩm).
 
 **Frontend**
-- `Layouts/AppLayout.vue` (`<AppLayout title="...">`), `config/navigation.js` (thêm mục menu: `{label, icon, route, match, can}`; mục chỉ hiện khi có quyền và route đã tồn tại).
-- `composables`: `usePermission`, `useMoney` (`money()`, `round()`), `useUniqueCheck` (kiểm tra trùng khi nhập), `useBranding`, `useUiSettings`.
-- Components: `AppDialog` (dùng thay `Dialog`, tự focus ô đầu tiên), `PhoneInput`, `FieldStatus`, `AvatarPicker`, `UserAvatar`, `BrandMark`.
-- Tiện ích: `utils/money.js`, `utils/numbering.js`, `utils/phone.js`, `utils/labels.js`.
+- `Layouts/AppLayout.vue` (`<AppLayout title="...">`); `config/navigation.js` (mục `{label, icon, route, match, can}`).
+- Composables: `usePermission`, `useMoney` (`money()`, `round()`), `useUniqueCheck` (kiểm tra trùng khi nhập, endpoint dạng `*.check`), `useBranding`, `useUiSettings`.
+- Components: `AppDialog` (dùng thay `Dialog`, tự focus ô đầu), `PhoneInput`, `FieldStatus`, `ImageInput`, `AvatarPicker`, `UserAvatar`, `TierBadge`, `BrandMark`.
+- Tiện ích: `utils/{money,numbering,phone,labels}.js`.
 
 ## Quy ước viết module mới
-1. Migration + Model (model dùng thuộc tính `#[Fillable([...])]`, nhớ thêm cột mới vào đó).
-2. Controller kiểu `UserController` (validate trong controller, thông báo lỗi tiếng Việt, `redirect()->route(...)->with('success', ...)`).
-3. Route trong `routes/web.php`, nhóm `auth`, mỗi route có `can:<quyền>`.
-4. Thêm quyền vào `RolePermissionSeeder` (+ gán cho vai trò) và nhãn tiếng Việt vào `utils/labels.js` (`MODULE_LABELS`, `ACTION_LABELS`).
-5. Trang Vue `Pages/<Module>/Index.vue` theo mẫu `Pages/Users/Index.vue`: `<Head>` + `<AppLayout>`, panel `al-panel al-fill`, `DataTable`, thêm/sửa trong `AppDialog`, `useForm`, xóa bằng `useConfirm`.
+1. Migration + Model (dùng `#[Fillable([...])]`, thêm cột mới vào đó).
+2. Controller kiểu `UserController`: validate trong controller, lỗi tiếng Việt, `redirect()->route(...)->with('success', ...)`.
+3. Route trong `routes/web.php`, nhóm `auth`, mỗi route có `can:<quyền>`; route cố định (`/x/check`) đặt trước route có `{id}`.
+4. Thêm quyền vào `RolePermissionSeeder` (+ gán vai trò) và nhãn vào `utils/labels.js` (`MODULE_LABELS`, `ACTION_LABELS`).
+5. Trang `Pages/<Module>/Index.vue` theo mẫu `Pages/Users/Index.vue`: `<Head>` + `<AppLayout>`, panel `al-panel al-fill`, `DataTable`, thêm/sửa trong `AppDialog`, `useForm`, xóa bằng `useConfirm`.
 6. Thêm mục vào `config/navigation.js`.
 7. Mã tự sinh dùng `DocumentNumber::next(...)`; tiền luôn qua `useMoney`/`Money`, không viết cứng `₫`.
-8. Form: ô đầu tiên được tự focus; lỗi hiện dưới ô nhập; hỗ trợ bàn phím và `aria-label`.
-
-## Khi nhờ AI làm module mới, hãy gửi kèm
-- File này
-- `routes/web.php`, `resources/js/config/navigation.js`, `database/seeders/RolePermissionSeeder.php`, `resources/js/utils/labels.js`
-- Mẫu tham chiếu: `app/Http/Controllers/UserController.php` và `resources/js/Pages/Users/Index.vue`
-- Nếu module dùng tiền, mã hoặc cài đặt: `app/Models/Setting.php`, `app/Support/DocumentNumber.php`
-- Nếu cần đổi layout hoặc CSS: `resources/js/Layouts/AppLayout.vue`, `resources/css/almira.css`
-- Model/migration của các bảng liên quan (ví dụ module Bán hàng cần Catalog, Khách hàng)
+8. Form: ô đầu tự focus, lỗi hiện dưới ô, hỗ trợ bàn phím và `aria-label`; ô bắt buộc đánh dấu sao đỏ (class `al-req`).
 
 ## Lưu ý đã gặp lỗi
 - `bootstrap/app.php` phải có `$middleware->web(append: [HandleInertiaRequests::class, ...])`, thiếu thì mất toàn bộ shared props.
 - Mật khẩu: model đã cast `hashed`, truyền chuỗi thường, không `bcrypt()`.
-- Seeder có `WithoutModelEvents` nên phải gọi `forgetCachedPermissions()` sau khi tạo quyền.
-- Cột email cho phép rỗng; username 10 chữ số bị cấm (tránh nhầm số điện thoại).
-- Tài khoản mẫu (mật khẩu `password`): `admin`, `manager`, `cashier`, `warehouse` (`@almira.test`).
+- Seeder dùng `WithoutModelEvents` nên phải gọi `forgetCachedPermissions()` sau khi tạo quyền.
+- Email cho phép rỗng; username 10 chữ số bị cấm (tránh nhầm số điện thoại).
 
-## Cách giao file
-Gửi gói **zip giữ nguyên đường dẫn** từ thư mục gốc dự án (người dùng giải nén đè), kèm: lệnh cần chạy (`php artisan migrate`, `npm install ...`), danh sách file cần xóa, và lưu ý chạy thử. Trả lời ngắn gọn, nói rõ phần nào đã kiểm tra, phần nào chưa.
+## Làm việc với AI
+- Chạy `node scripts/bundle.mjs <module...>` để gom file đúng module (kèm phụ thuộc) thành `bundles/bundle-<tên>.md`; bản đồ ở `docs/module-map.json` (làm xong module nào thì điền file của nó vào đó).
+- Giao code: **zip giữ nguyên đường dẫn** từ thư mục gốc dự án (giải nén đè), kèm lệnh cần chạy (`php artisan migrate`, `npm install ...`), danh sách file cần xóa, lưu ý chạy thử.

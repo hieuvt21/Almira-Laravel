@@ -1,0 +1,174 @@
+{
+  "_ghi_chu": "Nguồn sự thật cho bản đồ module. Mỗi module: mô tả, phụ thuộc (depends_on) và danh sách file/glob. Chạy: node scripts/bundle.mjs <module...>. Thêm module mới = thêm một khối ở đây.",
+  "always": ["core"],
+  "modules": {
+    "core": {
+      "mo_ta": "Luôn gửi: tóm tắt, route, menu, quyền, nhãn quyền",
+      "files": [
+        "tom-tat-app.md",
+        "routes/web.php",
+        "resources/js/config/navigation.js",
+        "database/seeders/RolePermissionSeeder.php",
+        "resources/js/utils/labels.js"
+      ]
+    },
+    "shared-backend": {
+      "mo_ta": "Thành phần backend dùng lại: Setting, DocumentNumber, Money, Xlsx, trait ảnh/định danh",
+      "files": [
+        "app/Models/Setting.php",
+        "app/Support/DocumentNumber.php",
+        "app/Support/Money.php",
+        "app/Support/Xlsx.php",
+        "app/Models/Concerns/HasUploadedImage.php",
+        "app/Http/Controllers/Concerns/ManagesIdentity.php",
+        "app/Http/Controllers/Controller.php",
+        "app/Http/Middleware/HandleInertiaRequests.php",
+        "bootstrap/app.php"
+      ]
+    },
+    "shared-ui": {
+      "mo_ta": "Layout, component và composable dùng lại ở frontend (không gồm CSS)",
+      "files": [
+        "resources/js/Layouts/AppLayout.vue",
+        "resources/js/Components/AppDialog.vue",
+        "resources/js/Components/FieldStatus.vue",
+        "resources/js/Components/ImageInput.vue",
+        "resources/js/Components/PhoneInput.vue",
+        "resources/js/Components/AvatarPicker.vue",
+        "resources/js/Components/UserAvatar.vue",
+        "resources/js/composables/useMoney.js",
+        "resources/js/composables/usePermission.js",
+        "resources/js/composables/useUniqueCheck.js",
+        "resources/js/utils/money.js",
+        "resources/js/utils/numbering.js",
+        "resources/js/utils/phone.js"
+      ]
+    },
+    "css": {
+      "mo_ta": "CSS riêng (al-*), khoảng 19KB: chỉ gửi khi cần đổi giao diện",
+      "files": ["resources/css/almira.css"]
+    },
+    "template": {
+      "mo_ta": "Mẫu tham chiếu khi viết module mới: UserController + Users/Index.vue",
+      "depends_on": ["shared-backend", "shared-ui"],
+      "files": [
+        "app/Http/Controllers/UserController.php",
+        "resources/js/Pages/Users/Index.vue"
+      ]
+    },
+    "users": {
+      "mo_ta": "Người dùng",
+      "depends_on": ["shared-backend", "shared-ui"],
+      "files": [
+        "app/Models/User.php",
+        "app/Http/Controllers/UserController.php",
+        "resources/js/Pages/Users/**",
+        "database/migrations/*users_table.php",
+        "database/migrations/*_add_username_to_users_table.php",
+        "database/migrations/*_add_avatar_to_users_table.php",
+        "database/migrations/*_add_phone_and_optional_email_to_users_table.php"
+      ]
+    },
+    "roles": {
+      "mo_ta": "Vai trò & quyền (Spatie)",
+      "depends_on": ["shared-ui"],
+      "files": [
+        "app/Http/Controllers/RoleController.php",
+        "resources/js/Pages/Roles/**",
+        "config/permission.php",
+        "database/migrations/*_create_permission_tables.php"
+      ]
+    },
+    "store": {
+      "mo_ta": "Cửa hàng: thông tin, tiền tệ & thuế, đánh số chứng từ; giao diện/thương hiệu",
+      "depends_on": ["shared-backend", "shared-ui"],
+      "files": [
+        "app/Http/Controllers/StoreSettingsController.php",
+        "app/Http/Controllers/AppearanceController.php",
+        "resources/js/Pages/Store/**",
+        "resources/js/Pages/Appearance/**",
+        "resources/js/composables/useBranding.js",
+        "resources/js/composables/useUiSettings.js",
+        "database/migrations/*_create_settings_table.php",
+        "database/migrations/*_create_document_sequences_table.php"
+      ]
+    },
+    "profile": {
+      "mo_ta": "Hồ sơ cá nhân và đăng nhập",
+      "depends_on": ["shared-backend", "shared-ui"],
+      "files": [
+        "app/Http/Controllers/ProfileController.php",
+        "app/Http/Controllers/Auth/AuthenticatedSessionController.php",
+        "app/Http/Requests/**",
+        "resources/js/Pages/Profile/**",
+        "resources/js/Pages/Auth/Login.vue",
+        "routes/auth.php"
+      ]
+    },
+    "catalog": {
+      "mo_ta": "Danh mục, đơn vị tính, bảng giá (trang /catalog)",
+      "depends_on": ["shared-backend", "shared-ui"],
+      "files": [
+        "app/Models/Category.php",
+        "app/Models/Unit.php",
+        "app/Models/PriceList.php",
+        "app/Http/Controllers/CatalogController.php",
+        "resources/js/Pages/Catalog/**",
+        "database/migrations/*_create_catalog_tables.php"
+      ]
+    },
+    "products": {
+      "mo_ta": "Sản phẩm: giá nhiều bảng giá, giá theo số lượng, tồn kho",
+      "depends_on": ["catalog", "shared-backend", "shared-ui"],
+      "files": [
+        "app/Models/Product.php",
+        "app/Models/ProductPrice.php",
+        "app/Http/Controllers/ProductController.php",
+        "resources/js/Pages/Products/**",
+        "database/migrations/*_create_catalog_tables.php",
+        "database/migrations/*_add_variants_to_products.php",
+        "database/migrations/*_simplify_products_units_stock.php",
+        "database/migrations/*_flatten_product_units_add_qty_pricing.php"
+      ]
+    },
+    "customers": {
+      "mo_ta": "Khách hàng, hạng khách hàng, nhập/xuất Excel",
+      "depends_on": ["shared-backend", "shared-ui"],
+      "files": [
+        "app/Models/Customer.php",
+        "app/Support/CustomerTiers.php",
+        "app/Http/Controllers/CustomerController.php",
+        "app/Http/Controllers/CustomerExchangeController.php",
+        "app/Http/Controllers/CustomerTierController.php",
+        "resources/js/Pages/Customers/**",
+        "resources/js/Components/TierBadge.vue",
+        "database/migrations/*customers_table.php"
+      ]
+    },
+    "inventory": {
+      "mo_ta": "(Dự kiến) Kho: tồn kho, kiểm kho, lấy opening_stock làm phiếu nhập đầu kỳ",
+      "depends_on": ["products", "template"],
+      "files": []
+    },
+    "purchases": {
+      "mo_ta": "(Dự kiến) Nhập hàng: nhà cung cấp, phiếu nhập, giá vốn",
+      "depends_on": ["products", "inventory", "template"],
+      "files": []
+    },
+    "pos": {
+      "mo_ta": "(Dự kiến) Bán hàng/POS: hóa đơn, thanh toán, hoàn trả",
+      "depends_on": ["products", "customers", "inventory", "template"],
+      "files": []
+    },
+    "shifts": {
+      "mo_ta": "(Dự kiến) Ca làm việc",
+      "depends_on": ["pos", "template"],
+      "files": []
+    },
+    "reports": {
+      "mo_ta": "(Dự kiến) Báo cáo",
+      "depends_on": ["pos", "inventory", "template"],
+      "files": []
+    }
+  }
+}
