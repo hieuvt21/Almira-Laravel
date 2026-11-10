@@ -337,6 +337,11 @@ const subline = (p) => [p.code, p.category, p.unit].filter(Boolean).join(' · ')
             <form @submit.prevent="submit" novalidate>
                 <!-- Thông tin chung -->
                 <div class="pr-head">
+                    <div class="field pr-head-name">
+                        <label for="p-name">Tên sản phẩm<span class="al-req" aria-hidden="true">*</span></label>
+                        <InputText id="p-name" v-model="form.name" autocomplete="off" aria-required="true" fluid :invalid="!!err('name')" />
+                        <small v-if="err('name')" class="field-error">{{ err('name') }}</small>
+                    </div>
                     <ImageInput
                         v-model:file="form.image_file"
                         v-model:remove="form.remove_image"
@@ -345,11 +350,7 @@ const subline = (p) => [p.code, p.category, p.unit].filter(Boolean).join(' · ')
                         label="ảnh sản phẩm"
                         :error="err('image_file')"
                     />
-                    <div class="field pr-head-name">
-                        <label for="p-name">Tên sản phẩm<span class="al-req" aria-hidden="true">*</span></label>
-                        <InputText id="p-name" v-model="form.name" autocomplete="off" aria-required="true" fluid :invalid="!!err('name')" />
-                        <small v-if="err('name')" class="field-error">{{ err('name') }}</small>
-                    </div>
+                    
                 </div>
 
                 <div class="pr-grid">
@@ -424,7 +425,9 @@ const subline = (p) => [p.code, p.category, p.unit].filter(Boolean).join(' · ')
                 <section class="pr-section" aria-labelledby="p-price-title">
                     <h3 id="p-price-title" class="pr-section-title">Giá bán</h3>
 
-                    <div class="field pr-retail">
+                    <!-- Lưới 2 cột: bảng giá ở cột trái, số lượng tự chuyển ở cột phải -->
+                    <div class="pr-prices">
+                    <div class="field">
                         <label for="p-retail">{{ defaultList?.name ?? 'Giá bán lẻ' }}<span class="al-req" aria-hidden="true">*</span></label>
                         <InputNumber
                             v-model="form.retail_price"
@@ -442,8 +445,8 @@ const subline = (p) => [p.code, p.category, p.unit].filter(Boolean).join(' · ')
                     </div>
 
                     <!-- Các bảng giá khác: luôn nhập được, chọn thủ công khi bán -->
-                    <div v-if="tierLists.length" class="pr-tiers">
-                        <div v-for="l in tierLists" :key="l.id" class="pr-tier" :class="{ 'pr-tier--qty': form.qty_pricing }">
+                    <template v-if="tierLists.length">
+                        <div v-for="l in tierLists" :key="l.id" class="pr-tier">
                             <div class="field">
                                 <label :for="`p-tier-price-${l.id}`">{{ l.name }}</label>
                                 <InputNumber
@@ -475,10 +478,11 @@ const subline = (p) => [p.code, p.category, p.unit].filter(Boolean).join(' · ')
                                 <small v-else-if="err(`prices.${tierIndex(l.id)}.min_qty`)" class="field-error">{{ err(`prices.${tierIndex(l.id)}.min_qty`) }}</small>
                             </div>
                         </div>
-                        <small class="field-hint pr-hint-block">
-                            Các bảng giá này luôn chọn thủ công được khi bán, kể cả chưa đủ số lượng.
-                        </small>
+                    </template>
                     </div>
+                    <small v-if="tierLists.length" class="field-hint pr-hint-block">
+                        Các bảng giá này luôn chọn thủ công được khi bán, kể cả chưa đủ số lượng.
+                    </small>
                     <p v-else class="field-hint">
                         Muốn bán nhiều loại giá (ví dụ "Giá sỉ"), hãy thêm bảng giá trong Danh mục &amp; đơn vị, tab Bảng giá.
                     </p>
@@ -505,19 +509,21 @@ const subline = (p) => [p.code, p.category, p.unit].filter(Boolean).join(' · ')
                     <small class="field-hint pr-hint-block">
                         Bật thì khi bán sẽ trừ kho và không cho bán quá số lượng tồn. Tắt thì không theo dõi số lượng.
                     </small>
-                    <div v-if="form.track_stock" class="field pr-stock">
-                        <label for="p-stock">Tồn kho ban đầu ({{ unitName }})</label>
-                        <InputNumber
-                            v-model="form.opening_stock"
-                            inputId="p-stock"
-                            :min="0"
-                            :maxFractionDigits="3"
-                            locale="vi-VN"
-                            placeholder="0"
-                            fluid
-                            :invalid="!!err('opening_stock')"
-                        />
-                        <small v-if="err('opening_stock')" class="field-error">{{ err('opening_stock') }}</small>
+                    <div v-if="form.track_stock" class="pr-prices pr-stock">
+                        <div class="field">
+                            <label for="p-stock">Tồn kho ban đầu ({{ unitName }})</label>
+                            <InputNumber
+                                v-model="form.opening_stock"
+                                inputId="p-stock"
+                                :min="0"
+                                :maxFractionDigits="3"
+                                locale="vi-VN"
+                                placeholder="0"
+                                fluid
+                                :invalid="!!err('opening_stock')"
+                            />
+                            <small v-if="err('opening_stock')" class="field-error">{{ err('opening_stock') }}</small>
+                        </div>
                     </div>
                 </section>
 
@@ -572,22 +578,17 @@ const subline = (p) => [p.code, p.category, p.unit].filter(Boolean).join(' · ')
 .pr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0 1rem; }
 .pr-section { border-top: 1px solid var(--al-line); padding-top: 0.9rem; margin-bottom: 1rem; }
 .pr-section-title { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.75rem; }
-.pr-retail { max-width: 16rem; }
 .pr-check { display: flex; align-items: center; gap: 0.5rem; }
 .pr-check label { font-weight: 500; }
 .pr-hint-block { display: block; margin: 0.35rem 0 0; }
-.pr-tiers { margin-top: 0.25rem; }
-.pr-tier { display: grid; grid-template-columns: 1fr; gap: 0 0.75rem; margin-bottom: 0.5rem; max-width: 16rem; }
-.pr-tier--qty { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); max-width: none; }
-.pr-tier .field { margin-bottom: 0; }
+/* Lưới 2 cột đều nhau, ô tràn hết chiều rộng form; .pr-tier "tan" vào lưới để giá và số lượng thẳng hàng */
+.pr-prices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1rem; }
+.pr-tier { display: contents; }
 .pr-auto { margin-top: 0.75rem; }
-.pr-stock { margin-top: 0.75rem; max-width: 16rem; }
+.pr-stock { margin-top: 0.75rem; }
 .pr-tag { margin-left: 0.4rem; }
 
 @media (max-width: 560px) {
-    .pr-head { flex-direction: column; }
-    .pr-head-name { width: 100%; flex-basis: auto; }
-    .pr-tier--qty { grid-template-columns: 1fr; gap: 0.5rem; }
-    .pr-tier { max-width: none; }
+    .pr-prices { grid-template-columns: 1fr; }
 }
 </style>
